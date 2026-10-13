@@ -1,0 +1,77 @@
+% chktex-file 36
+\section{Chức năng Ping pong}
+
+\subsection{Mục tiêu}
+Chức năng \texttt{pingpong} thực hiện trao đổi dữ liệu hai chiều (ping-pong một byte) giữa tiến trình cha (parent) và tiến trình con (child) thông qua cơ chế giao tiếp liên tiến trình (IPC) bằng đường ống (\texttt{pipe}). Mỗi tiến trình sau khi nhận được dữ liệu sẽ in ra định danh tiến trình (\texttt{PID}) cùng thông điệp tương ứng: \texttt{<pid>: received ping} đối với tiến trình con và \texttt{<pid>: received pong} đối với tiến trình cha.
+
+\subsection{Tổ chức triển khai}
+Chương trình người dùng được cài đặt trong tệp \texttt{user/pingpong.c}. Danh sách \texttt{UPROGS} trong \texttt{Makefile} được bổ sung mục \texttt{user/\_pingpong} để chương trình được biên dịch và tích hợp vào ảnh đĩa hệ thống tệp \texttt{fs.img}.
+
+Chương trình sử dụng các system call cốt lõi của xv6:
+\begin{itemize}
+  \item \texttt{pipe(int p[2])}: Khởi tạo hai đường ống riêng biệt: \texttt{p2c} (truyền từ cha sang con) và \texttt{c2p} (truyền từ con về cha).
+  \item \texttt{fork()}: Phân nhánh tạo tiến trình con; tiến trình con thừa hưởng bảng file descriptor từ tiến trình cha.
+  \item \texttt{read()} và \texttt{write()}: Thực hiện truyền nhận một byte qua các file descriptor của đường ống.
+  \item \texttt{getpid()}: Lấy PID của tiến trình hiện hành để in ra thông báo.
+  \item \texttt{close()}: Đóng các đầu pipe không sử dụng nhằm giải phóng tài nguyên.
+  \item \texttt{wait(int *status)}: Tiến trình cha chờ tiến trình con kết thúc trước khi thoát.
+\end{itemize}
+
+\subsection{Luồng xử lý}
+\begin{enumerate}
+  \item \textbf{Khởi tạo:} Tiến trình cha gọi \texttt{pipe(p2c)} và \texttt{pipe(c2p)}. Sau đó gọi \texttt{fork()} để tạo tiến trình con.
+  \item \textbf{Tiến trình con:}
+    \begin{itemize}
+      \item Đóng ngay đầu ghi của \texttt{p2c} (\texttt{close(p2c[1])}) và đầu đọc của \texttt{c2p} (\texttt{close(c2p[0])}) vì không có nhu cầu sử dụng.
+      \item Gọi \texttt{read(p2c[0], \&buf, 1)} và chuyển vào trạng thái chờ (blocking) cho đến khi cha gửi dữ liệu.
+      \item Khi nhận được 1 byte, tiến trình con in thông báo \texttt{<pid>: received ping} thông qua hàm \texttt{getpid()}.
+      \item Ghi byte nhận được sang đầu ghi của ống phản hồi \texttt{write(c2p[1], \&buf, 1)}.
+      \item Đóng các đầu pipe còn lại và thoát bằng \texttt{exit(0)}.
+    \end{itemize}
+  \item \textbf{Tiến trình cha:}
+    \begin{itemize}
+      \item Đóng đầu đọc của \texttt{p2c} (\texttt{close(p2c[0])}) và đầu ghi của \texttt{c2p} (\texttt{close(c2p[1])}).
+      \item Ghi 1 byte vào \texttt{write(p2c[1], \&buf, 1)} để gửi sang cho con.
+      \item Gọi \texttt{read(c2p[0], \&buf, 1)} để chờ byte phản hồi từ con.
+      \item Nhận được byte phản hồi, cha in ra màn hình \texttt{<pid>: received pong}.
+      \item Đóng các đầu pipe còn lại, gọi \texttt{wait(0)} để thu dọn tiến trình con (tránh biến con thành tiến trình zombie), sau đó thoát bằng \texttt{exit(0)}.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Khó khăn và giới hạn}
+\begin{itemize}
+  \item \textbf{Tính chất đơn công của Pipe:} Đường ống trong Unix là một chiều (half-duplex). Nếu chỉ sử dụng 1 pipe duy nhất cho cả hai chiều giao tiếp, tiến trình cha sau khi ghi một byte có thể tự đọc lại chính byte đó trước khi tiến trình con kịp đọc (\textit{race condition}). Giải pháp bắt buộc là sử dụng hai đường ống độc lập cho hai chiều truyền nhận.
+  \item \textbf{Quản lý File Descriptor:} xv6 quy định giới hạn \texttt{NOFILE = 16} (mỗi tiến trình chỉ mở tối đa 16 file descriptor cùng lúc). Việc đóng sớm các đầu pipe không dùng giúp bảo toàn số lượng file descriptor và đảm bảo hành vi gửi tín hiệu kết thúc tệp (EOF) chính xác khi pipe được đóng hoàn toàn.
+\end{itemize}
+
+\subsection{Kiểm thử}
+Ghi nhận kết quả chạy thực tế cho chương trình \texttt{pingpong}:
+\begin{itemize}
+  \item Chạy thủ công trên shell của xv6: tiến trình con in \texttt{<pid>: received ping}, tiếp theo tiến trình cha in \texttt{<pid>: received pong}.
+  \item Kiểm thử tự động bằng tập lệnh chấm điểm \texttt{grade-lab-util}.
+\end{itemize}
+
+\noindent Kết quả kiểm thử thực tế trên xv6:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ pingpong
+4: received ping
+3: received pong
+$
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\noindent Kết quả kiểm thử tự động với \texttt{grade-lab-util}:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ python3 grade-lab-util pingpong
+make: 'kernel/kernel' is up to date.
+== Test pingpong == pingpong: OK (1.7s) 
+\end{lstlisting}
+\end{minipage}
+\end{center}

@@ -1,0 +1,78 @@
+% chktex-file 36
+\section{Chức năng Primes (Sàng nguyên tố đồng thời)}
+
+\subsection{Mục tiêu}
+Chương trình \texttt{primes} cài đặt thuật toán sàng số nguyên tố đồng thời (\textit{Concurrent Prime Sieve}) theo mô hình đường ống (pipeline) do Doug McIlroy đề xuất. Mục tiêu là sàng lọc và in ra toàn bộ các số nguyên tố trong khoảng từ 2 đến 280 bằng cách phối hợp một chuỗi các tiến trình nối tiếp nhau thông qua các đường ống (\texttt{pipe}).
+
+\subsection{Tổ chức triển khai}
+Chương trình người dùng được cài đặt trong tệp \texttt{user/primes.c}. Thư mục \texttt{Makefile} được bổ sung mục \texttt{user/\_primes} trong danh sách \texttt{UPROGS}.
+
+Cấu trúc chương trình bao gồm:
+\begin{itemize}
+  \item \textbf{Tiến trình gốc (\texttt{main}):} Khởi tạo đường ống đầu tiên, gọi \texttt{fork()} để tạo chặng lọc đầu tiên. Tiến trình cha đẩy lần lượt các số nguyên từ 2 đến 280 vào pipe dưới dạng số nhị phân 4-byte (\texttt{sizeof(int)}), sau đó đóng đầu ghi và gọi \texttt{wait(0)}.
+  \item \textbf{Hàm đệ quy \texttt{primes(int lpipe\_read)}:} Đại diện cho một chặng lọc trong dây chuyền.
+    \begin{itemize}
+      \item Đọc số đầu tiên từ pipe bên trái (\texttt{lpipe\_read}). Số đầu tiên này được đảm bảo là số nguyên tố $p$, tiến trình in ra \texttt{prime <p>}.
+      \item Tiếp tục đọc các số $n$ còn lại từ \texttt{lpipe\_read}. Nếu $n \pmod p \neq 0$ (tức $n$ không phải là bội số của $p$), số này sẽ được chuyển sang chặng tiếp theo.
+      \item Sử dụng kỹ thuật tạo tiến trình theo nhu cầu (\textit{On-demand Process Creation}): Chỉ khởi tạo ống mới \texttt{rpipe} và gọi \texttt{fork()} tiến trình con khi gặp số đầu tiên cần chuyển tiếp sang chặng kế.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Luồng xử lý}
+\begin{enumerate}
+  \item Tiến trình sinh số đưa các số từ 2 đến 280 vào đầu ống.
+  \item Chặng thứ nhất nhận số 2, in \texttt{prime 2}, sau đó lọc bỏ toàn bộ các số chẵn ($n \pmod 2 = 0$) và chỉ chuyển tiếp các số lẻ sang chặng 2.
+  \item Chặng thứ hai nhận số 3 (số lẻ đầu tiên đến), in \texttt{prime 3}, lọc bỏ các bội số của 3 và đẩy tiếp các số còn lại sang chặng 3.
+  \item Quá trình tiếp diễn tuần tự cho đến khi toàn bộ các số tới 280 được sàng lọc hoàn tất.
+  \item \textbf{Cơ chế dọn dẹp lan truyền (Cascade Termination):} Khi tiến trình sinh hoàn thành ghi số 280, nó đóng đầu ghi của pipe đầu tiên. Chặng 1 đọc thấy EOF (\texttt{read()} trả về 0), tiến trình chặng 1 đóng đầu ghi của chặng 2 rồi gọi \texttt{wait(0)}. Tín hiệu EOF lan truyền lần lượt dọc theo pipeline; mỗi tiến trình cha chờ tiến trình con của mình thoát trước khi tự thoát bằng \texttt{exit(0)}, đảm bảo không phát sinh tiến trình zombie và toàn bộ pipeline kết thúc đồng bộ.
+\end{enumerate}
+
+\subsection{Khó khăn và giới hạn}
+\begin{itemize}
+  \item \textbf{Giới hạn tiến trình và File Descriptor trong xv6:} Trong \texttt{kernel/param.h}, xv6 quy định \texttt{NPROC = 64} và \texttt{NOFILE = 16}. Khoảng từ 2 đến 280 chứa đúng 59 số nguyên tố. Nếu không áp dụng cơ chế đóng tệp mô tả ngay lập tức (\texttt{close(lpipe\_read)}, \texttt{close(rpipe[0])}) và tạo tiến trình trễ khi cần, hệ thống sẽ nhanh chóng cạn kiệt bảng quản lý tiến trình hoặc bảng file descriptor dẫn đến crash.
+  \item \textbf{Truyền dữ liệu nhị phân:} Truyền trực tiếp các số nguyên 32-bit (\texttt{sizeof(int)}) qua pipe thay vì định dạng chuỗi văn bản ASCII giúp chương trình đạt hiệu năng cao, tiết kiệm bộ đệm và loại bỏ chi phí chuyển đổi chuỗi phức tạp.
+\end{itemize}
+
+\subsection{Kiểm thử}
+\begin{itemize}
+  \item Chạy trực tiếp trên shell của xv6: Chương trình in lần lượt các số nguyên tố từ \texttt{prime 2} đến \texttt{prime 277}.
+  \item Kiểm thử tự động bằng tập lệnh \texttt{grade-lab-util}.
+\end{itemize}
+
+\noindent Kết quả kiểm thử thực tế trên shell xv6:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ primes
+prime 2
+prime 3
+prime 5
+prime 7
+prime 11
+prime 13
+prime 17
+prime 19
+prime 23
+prime 29
+prime 31
+...
+prime 269
+prime 271
+prime 277
+$
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\noindent Kết quả kiểm thử tự động với \texttt{grade-lab-util}:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ python3 grade-lab-util primes
+make: 'kernel/kernel' is up to date.
+== Test primes == primes: OK (1.3s) 
+\end{lstlisting}
+\end{minipage}
+\end{center}

@@ -1,0 +1,61 @@
+% chktex-file 36
+\section{Chức năng cp (Sao chép tập tin)}
+
+\subsection{Mục tiêu}
+Chức năng \texttt{cp} cung cấp tiện ích sao chép tệp tin cơ bản trên hệ thống tệp của xv6 theo cú pháp \texttt{cp src dst}. Chương trình đọc nội dung từ tệp nguồn \texttt{src} và ghi sang tệp đích \texttt{dst} (tạo mới nếu chưa tồn tại hoặc ghi đè nếu đã có sẵn). Chương trình có cơ chế xử lý lỗi chặt chẽ: thông báo lỗi khi thiếu đối số, không thể mở tệp nguồn hoặc không thể tạo/ghi tệp đích.
+
+\subsection{Tổ chức triển khai}
+Chương trình được cài đặt trong tệp \texttt{user/cp.c}. Danh sách \texttt{UPROGS} trong \texttt{Makefile} được bổ sung mục \texttt{user/\_cp} để đưa tệp thực thi vào hệ thống tệp xv6.
+
+Chương trình sử dụng các system call và hằng số cờ của hệ điều hành:
+\begin{itemize}
+  \item \texttt{open(path, flags)}: Mở tệp nguồn với cờ \texttt{O\_RDONLY} (chỉ đọc). Mở hoặc tạo tệp đích với tổ hợp cờ \texttt{O\_WRONLY | O\_CREATE | O\_TRUNC} (mở để ghi, tạo mới nếu chưa có, hoặc xóa trắng nội dung cũ để ghi đè).
+  \item \texttt{read()} và \texttt{write()}: Thực hiện truyền dữ liệu giữa hai tệp thông qua vùng đệm \texttt{char buf[512]}.
+  \item \texttt{fprintf(2, ...)}: Xuất các thông báo lỗi trực tiếp vào luồng xuất lỗi chuẩn (\texttt{stderr}, file descriptor 2).
+  \item \texttt{close(fd)}: Đóng các tệp mô tả sau khi hoàn tất hoặc khi phát sinh sự cố.
+\end{itemize}
+
+\subsection{Luồng xử lý}
+\begin{enumerate}
+  \item \textbf{Kiểm tra tham số:} Kiểm tra số lượng đối số dòng lệnh \texttt{argc}. Nếu $\texttt{argc} \neq 3$, chương trình xuất thông báo \texttt{usage: cp src dst} ra \texttt{stderr} và thoát với mã lỗi 1 (\texttt{exit(1)}).
+  \item \textbf{Mở tệp nguồn:} Gọi \texttt{open(argv[1], O\_RDONLY)}. Nếu trả về giá trị âm (không thể mở tệp, tệp không tồn tại), in \texttt{cp: cannot open <src>} và thoát với mã 1.
+  \item \textbf{Mở tệp đích:} Gọi \texttt{open(argv[2], O\_WRONLY | O\_CREATE | O\_TRUNC)}. Nếu thất bại, in thông báo lỗi, đóng tệp nguồn đã mở trước đó và thoát với mã 1.
+  \item \textbf{Sao chép dữ liệu:} Sử dụng vòng lặp \texttt{while} với hàm \texttt{read(fd\_src, buf, sizeof(buf))}:
+    \begin{itemize}
+      \item Mỗi lần lặp đọc tối đa 512 bytes vào bộ đệm \texttt{buf}.
+      \item Ghi đúng số byte vừa đọc được sang tệp đích bằng hàm \texttt{write(fd\_dst, buf, n)}. Nếu số byte ghi được khác \texttt{n}, báo lỗi \texttt{cp: write error}, đóng cả hai tệp và thoát.
+    \end{itemize}
+  \item \textbf{Kết thúc:} Khi \texttt{read()} trả về 0 (đã đọc hết tệp - EOF), chương trình đóng cả hai tệp mô tả bằng \texttt{close()} và kết thúc thành công bằng \texttt{exit(0)}.
+\end{enumerate}
+
+\subsection{Khó khăn và giới hạn}
+\begin{itemize}
+  \item \textbf{Tối ưu hóa I/O bằng Buffer:} Thay vì sao chép từng byte một (gây ra quá nhiều lần chuyển ngữ cảnh \textit{context switch} giữa User mode và Kernel mode), chương trình sử dụng khối đệm 512 bytes. Kích thước này tương thích tốt với kích thước sector/block đĩa của xv6, giúp tối ưu hóa số lần gọi system call và tăng tốc độ sao chép.
+  \item \textbf{Đảm bảo giải phóng tài nguyên khi có lỗi:} Khi quá trình mở tệp đích hoặc ghi dữ liệu thất bại giữa chừng, chương trình luôn đóng các file descriptor đã mở trước khi gọi \texttt{exit(1)} để tránh rò rỉ tài nguyên hệ thống.
+\end{itemize}
+
+\subsection{Kiểm thử}
+Ghi nhận kết quả thực tế cho các kịch bản kiểm thử:
+\begin{itemize}
+  \item Sao chép thành công nội dung tệp tin nguồn sang tệp tin đích.
+  \item Kiểm tra thông báo lỗi khi thiếu đối số dòng lệnh.
+  \item Kiểm tra thông báo lỗi khi tệp nguồn không tồn tại.
+\end{itemize}
+
+\noindent Kết quả kiểm thử thực tế trên shell xv6:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ echo hello > a
+$ cp a b
+$ cat b
+hello
+$ cp a
+usage: cp src dst
+$ cp nofile out
+cp: cannot open nofile
+$
+\end{lstlisting}
+\end{minipage}
+\end{center}
