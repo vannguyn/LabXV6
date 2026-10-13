@@ -1,0 +1,229 @@
+% chktex-file 36
+% ==============================================================================
+% PHẦN BÁO CÁO CỦA NGUYỄN DUY ANH: YÊU CẦU 2 (PING PONG), 3 (PRIMES), 4 (CP)
+% ==============================================================================
+
+% ------------------------------------------------------------------------------
+% 1. CHỨC NĂNG PING PONG
+% ------------------------------------------------------------------------------
+\section{Chức năng Ping pong}
+
+\subsection{Mục tiêu}
+Chức năng \texttt{pingpong} thực hiện trao đổi dữ liệu hai chiều (ping-pong một byte) giữa tiến trình cha (parent) và tiến trình con (child) thông qua cơ chế giao tiếp liên tiến trình (IPC) bằng đường ống (\texttt{pipe}). Mỗi tiến trình sau khi nhận được dữ liệu sẽ in ra định danh tiến trình (\texttt{PID}) cùng thông điệp tương ứng: \texttt{<pid>: received ping} đối với tiến trình con và \texttt{<pid>: received pong} đối với tiến trình cha.
+
+\subsection{Tổ chức triển khai}
+Chương trình người dùng được cài đặt trong tệp \texttt{user/pingpong.c}. Danh sách \texttt{UPROGS} trong \texttt{Makefile} được bổ sung mục \texttt{user/\_pingpong} để chương trình được biên dịch và tích hợp vào ảnh đĩa hệ thống tệp \texttt{fs.img}.
+
+Chương trình sử dụng các system call cốt lõi của xv6:
+\begin{itemize}
+  \item \texttt{pipe(int p[2])}: Khởi tạo hai đường ống riêng biệt: \texttt{p2c} (truyền từ cha sang con) và \texttt{c2p} (truyền từ con về cha).
+  \item \texttt{fork()}: Phân nhánh tạo tiến trình con; tiến trình con thừa hưởng bảng file descriptor từ tiến trình cha.
+  \item \texttt{read()} và \texttt{write()}: Thực hiện truyền nhận một byte qua các file descriptor của đường ống.
+  \item \texttt{getpid()}: Lấy PID của tiến trình hiện hành để in ra thông báo.
+  \item \texttt{close()}: Đóng các đầu pipe không sử dụng nhằm giải phóng tài nguyên.
+  \item \texttt{wait(int *status)}: Tiến trình cha chờ tiến trình con kết thúc trước khi thoát.
+\end{itemize}
+
+\subsection{Luồng xử lý}
+\begin{enumerate}
+  \item \textbf{Khởi tạo:} Tiến trình cha gọi \texttt{pipe(p2c)} và \texttt{pipe(c2p)}. Sau đó gọi \texttt{fork()} để tạo tiến trình con.
+  \item \textbf{Tiến trình con:}
+    \begin{itemize}
+      \item Đóng ngay đầu ghi của \texttt{p2c} (\texttt{close(p2c[1])}) và đầu đọc của \texttt{c2p} (\texttt{close(c2p[0])}) vì không có nhu cầu sử dụng.
+      \item Gọi \texttt{read(p2c[0], \&buf, 1)} và chuyển vào trạng thái chờ (blocking) cho đến khi cha gửi dữ liệu.
+      \item Khi nhận được 1 byte, tiến trình con in thông báo \texttt{<pid>: received ping} thông qua hàm \texttt{getpid()}.
+      \item Ghi byte nhận được sang đầu ghi của ống phản hồi \texttt{write(c2p[1], \&buf, 1)}.
+      \item Đóng các đầu pipe còn lại và thoát bằng \texttt{exit(0)}.
+    \end{itemize}
+  \item \textbf{Tiến trình cha:}
+    \begin{itemize}
+      \item Đóng đầu đọc của \texttt{p2c} (\texttt{close(p2c[0])}) và đầu ghi của \texttt{c2p} (\texttt{close(c2p[1])}).
+      \item Ghi 1 byte vào \texttt{write(p2c[1], \&buf, 1)} để gửi sang cho con.
+      \item Gọi \texttt{read(c2p[0], \&buf, 1)} để chờ byte phản hồi từ con.
+      \item Nhận được byte phản hồi, cha in ra màn hình \texttt{<pid>: received pong}.
+      \item Đóng các đầu pipe còn lại, gọi \texttt{wait(0)} để thu dọn tiến trình con (tránh biến con thành tiến trình zombie), sau đó thoát bằng \texttt{exit(0)}.
+    \end{itemize}
+\end{enumerate}
+
+\subsection{Khó khăn và giới hạn}
+\begin{itemize}
+  \item \textbf{Tính chất đơn công của Pipe:} Đường ống trong Unix là một chiều (half-duplex). Nếu chỉ sử dụng 1 pipe duy nhất cho cả hai chiều giao tiếp, tiến trình cha sau khi ghi một byte có thể tự đọc lại chính byte đó trước khi tiến trình con kịp đọc (\textit{race condition}). Giải pháp bắt buộc là sử dụng hai đường ống độc lập cho hai chiều truyền nhận.
+  \item \textbf{Quản lý File Descriptor:} xv6 quy định giới hạn \texttt{NOFILE = 16} (mỗi tiến trình chỉ mở tối đa 16 file descriptor cùng lúc). Việc đóng sớm các đầu pipe không dùng giúp bảo toàn số lượng file descriptor và đảm bảo hành vi gửi tín hiệu kết thúc tệp (EOF) chính xác khi pipe được đóng hoàn toàn.
+\end{itemize}
+
+\subsection{Kiểm thử}
+Ghi nhận kết quả chạy thực tế cho chương trình \texttt{pingpong}:
+\begin{itemize}
+  \item Chạy thủ công trên shell của xv6: tiến trình con in \texttt{<pid>: received ping}, tiếp theo tiến trình cha in \texttt{<pid>: received pong}.
+  \item Kiểm thử tự động bằng tập lệnh chấm điểm \texttt{grade-lab-util}.
+\end{itemize}
+
+\noindent Kết quả kiểm thử thực tế trên xv6:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ pingpong
+4: received ping
+3: received pong
+$
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\noindent Kết quả kiểm thử tự động với \texttt{grade-lab-util}:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ python3 grade-lab-util pingpong
+make: 'kernel/kernel' is up to date.
+== Test pingpong == pingpong: OK (1.7s) 
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+% ------------------------------------------------------------------------------
+% 2. CHỨC NĂNG PRIMES
+% ------------------------------------------------------------------------------
+\section{Chức năng Primes (Sàng nguyên tố đồng thời)}
+
+\subsection{Mục tiêu}
+Chương trình \texttt{primes} cài đặt thuật toán sàng số nguyên tố đồng thời (\textit{Concurrent Prime Sieve}) theo mô hình đường ống (pipeline) do Doug McIlroy đề xuất. Mục tiêu là sàng lọc và in ra toàn bộ các số nguyên tố trong khoảng từ 2 đến 280 bằng cách phối hợp một chuỗi các tiến trình nối tiếp nhau thông qua các đường ống (\texttt{pipe}).
+
+\subsection{Tổ chức triển khai}
+Chương trình người dùng được cài đặt trong tệp \texttt{user/primes.c}. Danh sách \texttt{UPROGS} trong \texttt{Makefile} được bổ sung mục \texttt{user/\_primes}.
+
+Cấu trúc chương trình bao gồm:
+\begin{itemize}
+  \item \textbf{Tiến trình gốc (\texttt{main}):} Khởi tạo đường ống đầu tiên, gọi \texttt{fork()} để tạo chặng lọc đầu tiên. Tiến trình cha đẩy lần lượt các số nguyên từ 2 đến 280 vào pipe dưới dạng số nhị phân 4-byte (\texttt{sizeof(int)}), sau đó đóng đầu ghi và gọi \texttt{wait(0)}.
+  \item \textbf{Hàm đệ quy \texttt{primes(int lpipe\_read)}:} Đại diện cho một chặng lọc trong dây chuyền.
+    \begin{itemize}
+      \item Đọc số đầu tiên từ pipe bên trái (\texttt{lpipe\_read}). Số đầu tiên này được đảm bảo là số nguyên tố $p$, tiến trình in ra \texttt{prime <p>}.
+      \item Tiếp tục đọc các số $n$ còn lại từ \texttt{lpipe\_read}. Nếu $n \pmod p \neq 0$ (tức $n$ không phải là bội số của $p$), số này sẽ được chuyển sang chặng tiếp theo.
+      \item Sử dụng kỹ thuật tạo tiến trình theo nhu cầu (\textit{On-demand Process Creation}): Chỉ khởi tạo ống mới \texttt{rpipe} và gọi \texttt{fork()} tiến trình con khi gặp số đầu tiên cần chuyển tiếp sang chặng kế.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Luồng xử lý}
+\begin{enumerate}
+  \item Tiến trình sinh số đưa các số từ 2 đến 280 vào đầu ống.
+  \item Chặng thứ nhất nhận số 2, in \texttt{prime 2}, sau đó lọc bỏ toàn bộ các số chẵn ($n \pmod 2 = 0$) và chỉ chuyển tiếp các số lẻ sang chặng 2.
+  \item Chặng thứ hai nhận số 3 (số lẻ đầu tiên đến), in \texttt{prime 3}, lọc bỏ các bội số của 3 và đẩy tiếp các số còn lại sang chặng 3.
+  \item Quá trình tiếp diễn tuần tự cho đến khi toàn bộ các số tới 280 được sàng lọc hoàn tất.
+  \item \textbf{Cơ chế dọn dẹp lan truyền (Cascade Termination):} Khi tiến trình sinh hoàn thành ghi số 280, nó đóng đầu ghi của pipe đầu tiên. Chặng 1 đọc thấy EOF (\texttt{read()} trả về 0), tiến trình chặng 1 đóng đầu ghi của chặng 2 rồi gọi \texttt{wait(0)}. Tín hiệu EOF lan truyền lần lượt dọc theo pipeline; mỗi tiến trình cha chờ tiến trình con của mình thoát trước khi tự thoát bằng \texttt{exit(0)}, đảm bảo không phát sinh tiến trình zombie và toàn bộ pipeline kết thúc đồng bộ.
+\end{enumerate}
+
+\subsection{Khó khăn và giới hạn}
+\begin{itemize}
+  \item \textbf{Giới hạn tiến trình và File Descriptor trong xv6:} Trong \texttt{kernel/param.h}, xv6 quy định \texttt{NPROC = 64} và \texttt{NOFILE = 16}. Khoảng từ 2 đến 280 chứa đúng 59 số nguyên tố. Nếu không áp dụng cơ chế đóng tệp mô tả ngay lập tức (\texttt{close(lpipe\_read)}, \texttt{close(rpipe[0])}) và tạo tiến trình trễ khi cần, hệ thống sẽ nhanh chóng cạn kiệt bảng quản lý tiến trình hoặc bảng file descriptor dẫn đến crash.
+  \item \textbf{Truyền dữ liệu nhị phân:} Truyền trực tiếp các số nguyên 32-bit (\texttt{sizeof(int)}) qua pipe thay vì định dạng chuỗi văn bản ASCII giúp chương trình đạt hiệu năng cao, tiết kiệm bộ đệm và loại bỏ chi phí chuyển đổi chuỗi phức tạp.
+\end{itemize}
+
+\subsection{Kiểm thử}
+\begin{itemize}
+  \item Chạy trực tiếp trên shell của xv6: Chương trình in lần lượt các số nguyên tố từ \texttt{prime 2} đến \texttt{prime 277}.
+  \item Kiểm thử tự động bằng tập lệnh \texttt{grade-lab-util}.
+\end{itemize}
+
+\noindent Kết quả kiểm thử thực tế trên shell xv6:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ primes
+prime 2
+prime 3
+prime 5
+prime 7
+prime 11
+prime 13
+prime 17
+prime 19
+prime 23
+prime 29
+prime 31
+...
+prime 269
+prime 271
+prime 277
+$
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\noindent Kết quả kiểm thử tự động với \texttt{grade-lab-util}:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ python3 grade-lab-util primes
+make: 'kernel/kernel' is up to date.
+== Test primes == primes: OK (1.3s) 
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+% ------------------------------------------------------------------------------
+% 3. CHỨC NĂNG CP
+% ------------------------------------------------------------------------------
+\section{Chức năng cp (Sao chép tập tin)}
+
+\subsection{Mục tiêu}
+Chức năng \texttt{cp} cung cấp tiện ích sao chép tệp tin cơ bản trên hệ thống tệp của xv6 theo cú pháp \texttt{cp src dst}. Chương trình đọc nội dung từ tệp nguồn \texttt{src} và ghi sang tệp đích \texttt{dst} (tạo mới nếu chưa tồn tại hoặc ghi đè nếu đã có sẵn). Chương trình có cơ chế xử lý lỗi chặt chẽ: thông báo lỗi khi thiếu đối số, không thể mở tệp nguồn hoặc không thể tạo/ghi tệp đích.
+
+\subsection{Tổ chức triển khai}
+Chương trình được cài đặt trong tệp \texttt{user/cp.c}. Danh sách \texttt{UPROGS} trong \texttt{Makefile} được bổ sung mục \texttt{user/\_cp} để đưa tệp thực thi vào hệ thống tệp xv6.
+
+Chương trình sử dụng các system call và hằng số cờ của hệ điều hành:
+\begin{itemize}
+  \item \texttt{open(path, flags)}: Mở tệp nguồn với cờ \texttt{O\_RDONLY} (chỉ đọc). Mở hoặc tạo tệp đích với tổ hợp cờ \texttt{O\_WRONLY | O\_CREATE | O\_TRUNC} (mở để ghi, tạo mới nếu chưa có, hoặc xóa trắng nội dung cũ để ghi đè).
+  \item \texttt{read()} và \texttt{write()}: Thực hiện truyền dữ liệu giữa hai tệp thông qua vùng đệm \texttt{char buf[512]}.
+  \item \texttt{fprintf(2, ...)}: Xuất các thông báo lỗi trực tiếp vào luồng xuất lỗi chuẩn (\texttt{stderr}, file descriptor 2).
+  \item \texttt{close(fd)}: Đóng các tệp mô tả sau khi hoàn tất hoặc khi phát sinh sự cố.
+\end{itemize}
+
+\subsection{Luồng xử lý}
+\begin{enumerate}
+  \item \textbf{Kiểm tra tham số:} Kiểm tra số lượng đối số dòng lệnh \texttt{argc}. Nếu $\texttt{argc} \neq 3$, chương trình xuất thông báo \texttt{usage: cp src dst} ra \texttt{stderr} và thoát với mã lỗi 1 (\texttt{exit(1)}).
+  \item \textbf{Mở tệp nguồn:} Gọi \texttt{open(argv[1], O\_RDONLY)}. Nếu trả về giá trị âm (không thể mở tệp, tệp không tồn tại), in \texttt{cp: cannot open <src>} và thoát với mã 1.
+  \item \textbf{Mở tệp đích:} Gọi \texttt{open(argv[2], O\_WRONLY | O\_CREATE | O\_TRUNC)}. Nếu thất bại, in thông báo lỗi, đóng tệp nguồn đã mở trước đó và thoát với mã 1.
+  \item \textbf{Sao chép dữ liệu:} Sử dụng vòng lặp \texttt{while} với hàm \texttt{read(fd\_src, buf, sizeof(buf))}:
+    \begin{itemize}
+      \item Mỗi lần lặp đọc tối đa 512 bytes vào bộ đệm \texttt{buf}.
+      \item Ghi đúng số byte vừa đọc được sang tệp đích bằng hàm \texttt{write(fd\_dst, buf, n)}. Nếu số byte ghi được khác \texttt{n}, báo lỗi \texttt{cp: write error}, đóng cả hai tệp và thoát.
+    \end{itemize}
+  \item \textbf{Kết thúc:} Khi \texttt{read()} trả về 0 (đã đọc hết tệp - EOF), chương trình đóng cả hai tệp mô tả bằng \texttt{close()} và kết thúc thành công bằng \texttt{exit(0)}.
+\end{enumerate}
+
+\subsection{Khó khăn và giới hạn}
+\begin{itemize}
+  \item \textbf{Tối ưu hóa I/O bằng Buffer:} Thay vì sao chép từng byte một (gây ra quá nhiều lần chuyển ngữ cảnh \textit{context switch} giữa User mode và Kernel mode), chương trình sử dụng khối đệm 512 bytes. Kích thước này tương thích tốt với kích thước sector/block đĩa của xv6, giúp tối ưu hóa số lần gọi system call và tăng tốc độ sao chép.
+  \item \textbf{Đảm bảo giải phóng tài nguyên khi có lỗi:} Khi quá trình mở tệp đích hoặc ghi dữ liệu thất bại giữa chừng, chương trình luôn đóng các file descriptor đã mở trước khi gọi \texttt{exit(1)} để tránh rò rỉ tài nguyên hệ thống.
+\end{itemize}
+
+\subsection{Kiểm thử}
+Ghi nhận kết quả thực tế cho các kịch bản kiểm thử:
+\begin{itemize}
+  \item Sao chép thành công nội dung tệp tin nguồn sang tệp tin đích.
+  \item Kiểm tra thông báo lỗi khi thiếu đối số dòng lệnh.
+  \item Kiểm tra thông báo lỗi khi tệp nguồn không tồn tại.
+\end{itemize}
+
+\noindent Kết quả kiểm thử thực tế trên shell xv6:
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ echo hello > a
+$ cp a b
+$ cat b
+hello
+$ cp a
+usage: cp src dst
+$ cp nofile out
+cp: cannot open nofile
+$
+\end{lstlisting}
+\end{minipage}
+\end{center}
