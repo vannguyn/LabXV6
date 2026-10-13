@@ -1,0 +1,30 @@
+% Compile with pdfLaTeX from this directory: pdflatex main.tex
+\documentclass[12pt,a4paper]{article}
+\usepackage{fix-cm}
+\usepackage{scrextend}
+\changefontsizes{13pt}
+\usepackage{fit_hcmus}
+\usepackage{array}
+\usetikzlibrary{arrows.meta,positioning}
+\tikzset{
+    astarnode/.style={draw,rounded corners,align=center,minimum width=2.0cm,minimum height=0.9cm,font=\small},
+    bestedge/.style={-{Latex[length=2mm]},very thick},
+    normaledge/.style={-{Latex[length=2mm]},thin}
+}
+\courseid{CSC10007}
+\coursename{HỆ ĐIỀU HÀNH}
+\reportsubtitle{BÀI TẬP NHÓM}
+\title{Lab XV6}
+\instructor{Lê Viết Long}
+\classid{24\_22}
+\academicyear{Học kỳ I, 2026 - 2027}
+\author{\begin{tabular}{l@{\hspace{1.5cm}}l}
+    \textbf{MSSV} & \textbf{Họ và tên} \\
+    24120205 & Trần Văn Nguyên
+\end{tabular}}
+
+\begin{document}
+\pagestyle{fancy}
+\makecoverpage%
+\input{sections/05_sleep}
+\end{document}
