@@ -32,6 +32,7 @@ exec(char *path, char **argv)
   struct proc *p = myproc();
 
   begin_op();
+  
 
   if((ip = namei(path)) == 0){
     end_op();
