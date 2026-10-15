@@ -1,0 +1,12 @@
+[33m0973af1[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m add diff, du, tree command
+[33m095df8b[m[33m ([m[1;31morigin/duyanh[m[33m, [m[1;32mduyanh[m[33m)[m [Add] du, tree command. [chorus] exec, echo
+[33m864c164[m [Add] diff command
+[33m5cfdad3[m merge phần của Duy Anh (đã test, kiểm thử)
+[33mee62627[m docs(report): cập nhật MSSV và họ tên tác giả Duy Anh
+[33m2dca0b3[m docs(report): gộp các yêu cầu 2, 3, 4 vào file Duyanh.tex
+[33m0d06bbd[m docs(report): them bao cao LaTeX cho yeu cau 2 (pingpong), 3 (primes), 4 (cp)
+[33mb50291b[m feat(lab01): hoan thanh yeu cau 2 (pingpong), 3 (primes), 4 (cp) va fix gcc 14
+[33m2b836c7[m [Add] sleep command into Makefile
+[33m8904c7e[m [Add] report
+[33m7a0e79d[m Add sleep command
+[33mb144a40[m[33m ([m[1;31morigin/Nguyen[m[33m, [m[1;32mNguyen[m[33m)[m First commit
