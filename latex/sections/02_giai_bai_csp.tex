@@ -1,0 +1,100 @@
+\section{Câu 2. Giải bài toán từng bước}
+
+Ta dùng lan truyền ràng buộc (Forward Checking) sau mỗi phép gán. Khi việc
+lan truyền chưa xác định được nghiệm duy nhất, ta phân nhánh theo biến có
+miền giá trị nhỏ và kiểm tra các ràng buộc liên quan.
+
+\subsection{Bước 1: Xác định vị trí của Alice}
+
+Từ ràng buộc $C_1=((A),\{1\})$, ta có
+\[
+    D_A=\{1\},\qquad A=1.
+\]
+Áp dụng nhóm ràng buộc AllDiff, loại ghế 1 khỏi miền của các biến còn lại:
+\[
+    D_B=D_C=D_D=D_E=D_F=\{2,3,4,5,6\}.
+\]
+
+\subsection{Bước 2: Xác định vị trí của Bob}
+
+Theo ràng buộc đối diện $C_2$, khi $A=1$ thì chỉ có cặp $(1,4)$ thỏa mãn.
+Do đó
+\[
+    D_B=\{4\},\qquad B=4.
+\]
+Tiếp tục áp dụng AllDiff, ta được
+\[
+    D_C=D_D=D_E=D_F=\{2,3,5,6\}.
+\]
+
+\subsection{Bước 3: Thu hẹp miền của Frank và Dave}
+
+Vì Alice ở ghế 1, hai ghế kề Alice là 2 và 6. Từ $C_3$, Frank không thể
+ngồi ở hai ghế này:
+\[
+    D_F=\{3,5\}.
+\]
+
+Vì Bob ở ghế 4, Dave phải ngồi cạnh ghế 4. Hai lựa chọn ban đầu là ghế 3
+và 5, do đó
+\[
+    D_D=\{3,5\}.
+\]
+
+\subsection{Bước 4: Thu hẹp miền của Eve và Carol}
+
+Hai biến $D$ và $F$ cùng có miền $\{3,5\}$, đồng thời $C_{19}$ yêu cầu
+$D\ne F$. Vì vậy hai ghế 3 và 5 chắc chắn được phân cho Dave và Frank.
+Loại chúng khỏi miền của Eve và Carol, ta thu được
+\[
+    D_E=D_C=\{2,6\}.
+\]
+
+\subsection{Bước 5: Phân nhánh và tìm nghiệm}
+
+Chọn biến Dave vì $D_D=\{3,5\}$ và Dave liên kết với nhiều ràng buộc.
+
+\subsubsection{Trường hợp 1: $D=3$}
+
+Do $D\ne F$ và $D_F=\{3,5\}$, suy ra $F=5$. Dave phải ngồi cạnh Eve;
+các ghế kề 3 là 2 và 4, nhưng ghế 4 đã thuộc về Bob, nên $E=2$. Cuối
+cùng, từ AllDiff và $D_C=\{2,6\}$, suy ra $C=6$.
+
+Nghiệm chính là
+\[
+    (A,B,C,D,E,F)=(1,4,6,3,2,5).
+\]
+
+\begin{table}[htbp]
+    \centering
+    \caption{Nghiệm chính của bài toán CSP}
+    \label{tab:nghiem-csp}
+    \renewcommand{\arraystretch}{1.25}
+    \begin{tabular}{c|cccccc}
+        \toprule
+        Nhân vật / Ghế & 1 & 2 & 3 & 4 & 5 & 6 \\
+        \midrule
+        Alice & $\checkmark$ &  &  &  &  &  \\
+        Bob   &  &  &  & $\checkmark$ &  &  \\
+        Carol &  &  &  &  &  & $\checkmark$ \\
+        Dave  &  &  & $\checkmark$ &  &  &  \\
+        Eve   &  & $\checkmark$ &  &  &  &  \\
+        Frank &  &  &  &  & $\checkmark$ &  \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsubsection{Trường hợp 2: $D=5$}
+
+Đây là nghiệm đối xứng gương của trường hợp trên. Khi đó
+\[
+    (A,B,C,D,E,F)=(1,4,2,5,6,3).
+\]
+
+\subsection{Kết luận}
+
+Bài toán có hai nghiệm đối xứng nếu chỉ xét các ràng buộc đã cho. Nghiệm
+chính được trình bày trong Bảng~\ref{tab:nghiem-csp}: Alice ngồi ghế 1,
+Eve ghế 2, Dave ghế 3, Bob ghế 4, Frank ghế 5 và Carol ghế 6. Nghiệm còn
+lại là ảnh đối xứng qua trục đi qua ghế 1 và ghế 4.
+

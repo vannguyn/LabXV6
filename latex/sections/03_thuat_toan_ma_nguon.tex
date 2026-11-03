@@ -1,0 +1,46 @@
+\section{Cài đặt và Mã nguồn chính}
+
+\subsection{Mã giả giải thuật}
+Trình bày các bước thực hiện của thuật toán chính:
+
+\begin{algorithm}[h!]
+    \caption{Thuật toán tìm kiếm phần tử}
+    \label{alg:binary_search}
+    \begin{algorithmic}[1]
+        \Require Mảng đã sắp xếp $A$, giá trị cần tìm $x$.
+        \Ensure Vị trí của $x$ trong mảng, hoặc $-1$ nếu không tìm thấy.
+        \State $left \leftarrow 0, right \leftarrow \text{length}(A) - 1$
+        \While{$left \le right$}
+            \State $mid \leftarrow \lfloor (left + right) / 2 \rfloor$
+            \If{$A[mid] = x$}
+                \State \Return $mid$
+            \ElsIf{$A[mid] < x$}
+                \State $left \leftarrow mid + 1$
+            \Else
+                \State $right \leftarrow mid - 1$
+            \EndIf
+        \EndWhile
+        \State \Return $-1$
+    \end{algorithmic}
+\end{algorithm}
+
+\subsection{Đoạn mã nguồn cốt lõi}
+Sinh viên chèn đoạn mã nguồn chính quan trọng nhất (tránh chèn toàn bộ mã nguồn quá dài):
+
+\begin{lstlisting}[language=Python, caption={Hàm tìm kiếm nhị phân bằng Python}]
+def binary_search(arr, target):
+    left, right = 0, len(arr) - 1
+    while left <= right:
+        mid = (left + right) // 2
+        if arr[mid] == target:
+            return mid
+        elif arr[mid] < target:
+            left = mid + 1
+        else:
+            right = mid - 1
+    return -1
+\end{lstlisting}
+
+\begin{callouttip}[Lưu ý khi nộp bài]
+    Mã nguồn nộp kèm cần có chú thích (comment) rõ ràng ở các hàm chính và tuân thủ chuẩn đặt tên biến.
+\end{callouttip}

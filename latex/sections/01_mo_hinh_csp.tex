@@ -1,0 +1,104 @@
+\section{Câu 1. Mô hình hóa bài toán dưới dạng CSP: $P=(X,D,C)$}
+
+\subsection{Tập biến $X$ và miền giá trị $D$}
+
+Xét sáu nhân vật Alice, Bob, Carol, Dave, Eve và Frank ngồi quanh một bàn
+tròn có sáu ghế. Gọi
+\[
+    X=\{A,B,C,D,E,F\}
+\]
+là tập biến, trong đó mỗi biến biểu diễn vị trí của một nhân vật:
+
+\begin{center}
+\begin{tabular}{c|cccccc}
+    \toprule
+    Biến & $A$ & $B$ & $C$ & $D$ & $E$ & $F$ \\
+    \midrule
+    Nhân vật & Alice & Bob & Carol & Dave & Eve & Frank \\
+    \bottomrule
+\end{tabular}
+\end{center}
+
+Các ghế được đánh số theo chiều kim đồng hồ từ 1 đến 6. Miền giá trị ban đầu
+của mỗi biến là
+\[
+    D_A=D_B=D_C=D_D=D_E=D_F=\{1,2,3,4,5,6\}.
+\]
+
+Trên bàn tròn sáu ghế, hai ghế đối diện nhau khi hiệu tuyệt đối bằng 3; hai
+ghế kề nhau khi hiệu tuyệt đối bằng 1 hoặc bằng 5.
+
+\subsection{Tập ràng buộc $C$}
+
+Mỗi ràng buộc được mô tả bởi cặp $(\text{scope},\text{relation})$. Các ràng
+buộc của bài toán như sau.
+
+\subsubsection{Ràng buộc một ngôi và các ràng buộc quan hệ}
+
+\begin{enumerate}
+    \item Alice ngồi ở ghế số 1:
+    \[
+        C_1=((A),\{1\}).
+    \]
+
+    \item Alice ngồi đối diện Bob. Quan hệ đối diện là
+    \[
+        R_{\mathrm{doi\ dien}}=
+        \{(1,4),(2,5),(3,6),(4,1),(5,2),(6,3)\},
+    \]
+    nên
+    \[
+        C_2=((A,B),R_{\mathrm{doi\ dien}}).
+    \]
+
+    \item Frank không ngồi cạnh Alice. Quan hệ không kề được viết là
+    \[
+        R_{\mathrm{khong\ ke}}=
+        \{(f,a)\in D_F\times D_A\mid |f-a|\notin\{1,5\}\},
+    \]
+    nên
+    \[
+        C_3=((F,A),R_{\mathrm{khong\ ke}}).
+    \]
+
+    \item Dave ngồi cạnh Eve:
+    \[
+        C_4=((D,E),R_{\mathrm{ke}}).
+    \]
+
+    \item Dave ngồi cạnh Bob:
+    \[
+        C_5=((D,B),R_{\mathrm{ke}}).
+    \]
+\end{enumerate}
+
+Trong đó quan hệ hai ghế kề nhau là
+\[
+\begin{split}
+R_{\mathrm{ke}}=\{&(1,2),(1,6),(2,1),(2,3),(3,2),(3,4),\\
+                    &(4,3),(4,5),(5,4),(5,6),(6,5),(6,1)\}.
+\end{split}
+\]
+
+\subsubsection{Ràng buộc AllDiff}
+
+Mỗi nhân vật phải ngồi ở một ghế khác nhau. Gọi
+\[
+    R_{\ne}=\{(u,v)\in\{1,\ldots,6\}^2\mid u\ne v\}.
+\]
+Quan hệ này tạo ra 15 ràng buộc hai ngôi cho mọi cặp biến khác nhau:
+\[
+\begin{array}{lll}
+ C_6=((A,B),R_{\ne}), & C_7=((A,C),R_{\ne}), & C_8=((A,D),R_{\ne}),\\
+ C_9=((A,E),R_{\ne}), & C_{10}=((A,F),R_{\ne}), & C_{11}=((B,C),R_{\ne}),\\
+ C_{12}=((B,D),R_{\ne}), & C_{13}=((B,E),R_{\ne}), & C_{14}=((B,F),R_{\ne}),\\
+ C_{15}=((C,D),R_{\ne}), & C_{16}=((C,E),R_{\ne}), & C_{17}=((C,F),R_{\ne}),\\
+ C_{18}=((D,E),R_{\ne}), & C_{19}=((D,F),R_{\ne}), & C_{20}=((E,F),R_{\ne}).
+\end{array}
+\]
+
+Như vậy, mô hình CSP hoàn chỉnh là
+\[
+    P=(X,D,C),\qquad C=\{C_1,C_2,\ldots,C_{20}\}.
+\]
+

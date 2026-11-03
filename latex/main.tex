@@ -1,0 +1,31 @@
+% Biên dịch bằng pdfLaTeX từ thư mục này: pdflatex main.tex
+\documentclass[12pt,a4paper]{article}
+
+% Bộ mã và font T5 cho tiếng Việt khi dùng pdfLaTeX.
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage[vietnamese]{babel}
+\usepackage{scrextend}
+\changefontsizes{13pt}
+
+\usepackage{fit_hcmus}
+\usepackage{array}
+\usepackage{amssymb}
+
+\courseid{CSC10001}
+\coursename{NHẬP MÔN TRÍ TUỆ NHÂN TẠO}
+\reportsubtitle{BÀI TẬP VỀ NHÀ: CSP}
+\title{Mô hình hóa và giải bài toán CSP}
+\instructor{}
+\classid{}
+\academicyear{2026--2027}
+\author{Mã số sinh viên: \underline{\hspace{3cm}} \quad Họ và tên: \underline{\hspace{5cm}}}
+
+\begin{document}
+\pagestyle{fancy}
+\makeassignmentheader
+
+\input{sections/01_mo_hinh_csp}
+\input{sections/02_giai_bai_csp}
+
+\end{document}

@@ -1,0 +1,42 @@
+\section{Kết quả thực nghiệm và Tự đánh giá}
+
+\subsection{Kết quả kiểm thử trên các bộ dữ liệu}
+Tóm tắt kết quả chạy thử nghiệm chương trình trên các trường hợp kiểm thử (test cases):
+
+\begin{table}[h!]
+    \centering
+    \caption{Bảng kết quả kiểm thử chương trình}
+    \label{tab:test_results}
+    \begin{tabularx}{\textwidth}{c X c c}
+        \toprule
+        \textbf{Test Case} & \textbf{Mô tả dữ liệu thử nghiệm} & \textbf{Kết quả mong đợi} & \textbf{Đánh giá} \\
+        \midrule
+        01 & Dữ liệu mảng rỗng $A = []$ & Trả về $-1$ & Đạt \\
+        02 & Phần tử nằm ở đầu mảng & Trả về vị trí $0$ & Đạt \\
+        03 & Phần tử không tồn tại trong mảng & Trả về $-1$ & Đạt \\
+        04 & Mảng lớn có $10^6$ phần tử & Thời gian $< 0.1\text{s}$ & Đạt \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Bảng tự đánh giá mức độ hoàn thành}
+Sinh viên tự đánh giá tỷ lệ hoàn thành các yêu cầu của bài tập:
+
+\begin{table}[h!]
+    \centering
+    \caption{Tự đánh giá mức độ hoàn thành yêu cầu}
+    \label{tab:self_eval}
+    \begin{tabularx}{\textwidth}{c X c}
+        \toprule
+        \textbf{STT} & \textbf{Yêu cầu của đề bài} & \textbf{Mức độ hoàn thành} \\
+        \midrule
+        1 & Cài đặt đúng thuật toán và cấu trúc dữ liệu yêu cầu & 100\% \\
+        2 & Xử lý đầy đủ các trường hợp ngoại lệ (Edge cases) & 100\% \\
+        3 & Tối ưu hóa thời gian thực thi và bộ nhớ sử dụng & 100\% \\
+        4 & Viết báo cáo rõ ràng, mạch lạc đúng chuẩn quy định & 100\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\subsection{Kết luận}
+Chương trình đã hoàn thành đầy đủ các yêu cầu đề ra, chạy ổn định và vượt qua toàn bộ các bộ dữ liệu kiểm thử.
