@@ -1,0 +1,210 @@
+% chktex-file 36
+\section{Chức năng Sysinfo (Thu thập thông tin hệ thống)}
+
+\subsection{Mục tiêu và Yêu cầu}
+Chức năng \texttt{sysinfo} được cài đặt dưới dạng một lời gọi hệ thống (system call) mới trong xv6, có nhiệm vụ thu thập các số liệu thống kê thời gian thực về tài nguyên hệ điều hành đang vận hành. System call này nhận một đối số duy nhất là con trỏ trỏ tới cấu trúc \texttt{struct sysinfo} nằm trong không gian người dùng (user space):
+\begin{itemize}
+    \item \textbf{Cấu trúc \texttt{struct sysinfo}} (được định nghĩa trong \texttt{kernel/sysinfo.h}):
+    \begin{itemize}
+        \item \texttt{uint64 freemem}: Tổng dung lượng bộ nhớ vật lý còn rỗi của hệ thống (tính bằng byte).
+        \item \texttt{uint64 nproc}: Tổng số lượng tiến trình đang tồn tại trong hệ thống có trạng thái khác \texttt{UNUSED} (bao gồm các trạng thái: \texttt{USED}, \texttt{SLEEPING}, \texttt{RUNNABLE}, \texttt{RUNNING}, \texttt{ZOMBIE}).
+    \end{itemize}
+    \item \textbf{Nguyên mẫu hàm}: \texttt{int sysinfo(struct sysinfo *info)}
+    \item \textbf{Giá trị trả về}: Trả về \texttt{0} nếu sao chép dữ liệu thành công; trả về \texttt{-1} nếu con trỏ truyền vào không hợp lệ hoặc phát sinh lỗi truy cập bộ nhớ.
+    \item \textbf{Chương trình kiểm thử và ứng dụng}:
+    \begin{itemize}
+        \item Chương trình người dùng \texttt{sysinfo} (trong \texttt{user/sysinfo.c}) để người dùng có thể trực tiếp gọi trên shell và xem thông tin RAM rỗi, số tiến trình.
+        \item Chương trình kiểm thử tự động \texttt{sysinfotest} (trong \texttt{user/sysinfotest.c}) để kiểm tra nghiêm ngặt tính toàn vẹn bộ nhớ và tính chính xác của bộ đếm tiến trình.
+    \end{itemize}
+\end{itemize}
+
+\subsection{Tổ chức triển khai}
+Để hỗ trợ system call \texttt{sysinfo}, các thành phần mã nguồn của hệ điều hành được bổ sung và điều chỉnh như sau:
+\begin{itemize}
+    \item \texttt{kernel/sysinfo.h}: Định nghĩa cấu trúc dữ liệu \texttt{struct sysinfo} chứa hai trường \texttt{freemem} và \texttt{nproc}. Tệp này được include ở cả kernel space và user space.
+    \item \texttt{kernel/kalloc.c}: Cài đặt hàm \texttt{uint64 kmem\_freemem(void)} duyệt danh sách các trang nhớ rỗi (\texttt{kmem.freelist}) dưới sự bảo vệ của khóa \texttt{kmem.lock}.
+    \item \texttt{kernel/proc.c}: Cài đặt hàm \texttt{uint64 proc\_nproc(void)} duyệt mảng bảng tiến trình \texttt{proc[NPROC]}, sử dụng khóa hạt mịn \texttt{p->lock} để đếm các tiến trình có trạng thái khác \texttt{UNUSED}.
+    \item \texttt{kernel/defs.h}: Khai báo nguyên mẫu của hai hàm \texttt{kmem\_freemem()} và \texttt{proc\_nproc()} để kernel có thể truy xuất chéo mô-đun.
+    \item \texttt{kernel/syscall.h}: Định nghĩa số hiệu lời gọi hệ thống: \texttt{\#define SYS\_sysinfo 23}.
+    \item \texttt{kernel/syscall.c}: Khai báo extern hàm xử lý \texttt{sys\_sysinfo} và đăng ký vị trí \texttt{[SYS\_sysinfo]} vào bảng con trỏ hàm \texttt{syscalls[]}.
+    \item \texttt{kernel/sysproc.c}: Cài đặt hàm xử lý chính \texttt{sys\_sysinfo(void)}. Hàm đọc con trỏ đích bằng \texttt{argaddr(0, \&uaddr)}, thu thập số liệu từ kernel và ghi ra user space bằng \texttt{copyout()}.
+    \item \texttt{user/user.h}: Khai báo trước cấu trúc \texttt{struct sysinfo;} và nguyên mẫu hàm \texttt{int sysinfo(struct sysinfo *)}.
+    \item \texttt{user/usys.pl}: Thêm chỉ thị \texttt{entry("sysinfo");} để trình sinh mã tự động tạo đoạn mã hợp ngữ kích hoạt ngắt phần mềm (\texttt{ecall}) sang kernel.
+    \item \texttt{user/sysinfo.c}: Ứng dụng dòng lệnh cho người dùng để in thông số hệ thống ra màn hình theo đơn vị Bytes, KB và MB.
+    \item \texttt{user/sysinfotest.c}: Bộ kiểm thử tự động bao gồm kiểm tra địa chỉ lỗi, kiểm tra cấp phát bộ nhớ động (\texttt{sbrk}) và kiểm tra phân nhánh tiến trình (\texttt{fork}).
+    \item \texttt{Makefile}: Thêm \texttt{\$U/\_sysinfo} và \texttt{\$U/\_sysinfotest} vào danh sách chương trình người dùng \texttt{UPROGS}.
+\end{itemize}
+
+\subsection{Thiết kế giải thuật và Luồng xử lý}
+
+\subsubsection{Thu thập dung lượng bộ nhớ vật lý còn trống (\texttt{kmem\_freemem})}
+Trong xv6, bộ nhớ vật lý được quản lý theo cơ chế phân trang (paging), mỗi trang có kích thước cố định $4096\text{ bytes}$ (\texttt{PGSIZE}). Các trang nhớ còn rỗi được tổ chức thành một danh sách liên kết đơn \texttt{kmem.freelist}:
+\begin{enumerate}
+    \item Trước khi duyệt danh sách, kernel phải thực hiện \texttt{acquire(\&kmem.lock)} nhằm khóa cấu trúc bộ nhớ. Điều này đặc biệt quan trọng trong môi trường đa nhân (SMP), ngăn chặn race condition khi các CPU khác đồng thời cấp phát (\texttt{kalloc}) hoặc giải phóng (\texttt{kfree}) trang nhớ.
+    \item Khởi tạo biến đếm \texttt{count = 0}. Duyệt qua từng nút con trỏ \texttt{struct run *r} trong \texttt{freelist}, mỗi trang tăng \texttt{count} thêm 1.
+    \item Sau khi duyệt hết danh sách, giải phóng khóa bằng \texttt{release(\&kmem.lock)}.
+    \item Trả về tổng dung lượng byte trống: $\text{freemem} = \text{count} \times \texttt{PGSIZE}$.
+\end{enumerate}
+
+\begin{lstlisting}[language=C, caption={Cài đặt hàm tính bộ nhớ trống trong kernel/kalloc.c}]
+uint64
+kmem_freemem(void)
+{
+  struct run *r;
+  uint64 count = 0;
+
+  acquire(&kmem.lock);
+  r = kmem.freelist;
+  while(r) {
+    count++;
+    r = r->next;
+  }
+  release(&kmem.lock);
+
+  return count * PGSIZE;
+}
+\end{lstlisting}
+
+\subsubsection{Đếm số tiến trình đang hoạt động (\texttt{proc\_nproc})}
+xv6 cấu hình bảng tiến trình dưới dạng mảng tĩnh \texttt{struct proc proc[NPROC]} với tối đa 64 tiến trình:
+\begin{enumerate}
+    \item Khởi tạo biến đếm \texttt{count = 0}.
+    \item Duyệt qua từng phần tử \texttt{p} trong mảng từ \texttt{proc[0]} đến \texttt{proc[NPROC-1]}.
+    \item Với mỗi tiến trình \texttt{p}, tiến hành chiếm khóa hạt mịn \texttt{acquire(\&p->lock)} để đảm bảo tính nhất quán của biến trạng thái \texttt{p->state}.
+    \item Nếu \texttt{p->state != UNUSED}, tiến trình này đang tồn tại và hoạt động (ở một trong các trạng thái \texttt{USED}, \texttt{SLEEPING}, \texttt{RUNNABLE}, \texttt{RUNNING}, hoặc \texttt{ZOMBIE}), tăng \texttt{count} thêm 1.
+    \item Nhả khóa \texttt{release(\&p->lock)} ngay sau khi đọc xong trạng thái của tiến trình đó.
+    \item Trả về tổng số tiến trình \texttt{count}.
+\end{enumerate}
+
+\begin{lstlisting}[language=C, caption={Cài đặt hàm đếm tiến trình trong kernel/proc.c}]
+uint64
+proc_nproc(void)
+{
+  struct proc *p;
+  uint64 count = 0;
+
+  for(p = proc; p < &proc[NPROC]; p++) {
+    acquire(&p->lock);
+    if(p->state != UNUSED) {
+      count++;
+    }
+    release(&p->lock);
+  }
+  return count;
+}
+\end{lstlisting}
+
+\subsubsection{Điều phối và Chuyển giao dữ liệu (\texttt{sys\_sysinfo})}
+Hàm xử lý syscall trong kernel được thực thi như sau:
+\begin{enumerate}
+    \item Gọi \texttt{argaddr(0, \&uaddr)} để lấy địa chỉ ảo 64-bit của cấu trúc \texttt{sysinfo} được truyền từ phía người dùng qua thanh ghi $a_0$.
+    \item Khởi tạo một biến cấu trúc cục bộ \texttt{struct sysinfo info} nằm trong ngăn xếp (stack) của kernel.
+    \item Gán giá trị: \texttt{info.freemem = kmem\_freemem();} và \texttt{info.nproc = proc\_nproc();}.
+    \item Sử dụng hàm chuẩn của xv6 \texttt{copyout(p->pagetable, uaddr, (char *)\&info, sizeof(info))} để sao chép an toàn từ kernel stack sang không gian địa chỉ ảo của tiến trình người dùng:
+    \begin{itemize}
+        \item Nếu \texttt{copyout} trả về giá trị âm (do \texttt{uaddr} trỏ ra ngoài không gian địa chỉ hợp lệ hoặc trang nhớ không có quyền ghi), syscall lập tức trả về \texttt{-1}.
+        \item Nếu sao chép thành công, hàm trả về \texttt{0}.
+    \end{itemize}
+\end{enumerate}
+
+\begin{lstlisting}[language=C, caption={Cài đặt hàm xử lý syscall trong kernel/sysproc.c}]
+uint64
+sys_sysinfo(void)
+{
+  uint64 uaddr;
+  struct sysinfo info;
+  struct proc *p = myproc();
+
+  argaddr(0, &uaddr);
+
+  info.freemem = kmem_freemem();
+  info.nproc = proc_nproc();
+
+  if(copyout(p->pagetable, uaddr, (char *)&info, sizeof(info)) < 0)
+    return -1;
+  return 0;
+}
+\end{lstlisting}
+
+\subsection{Các giải pháp kỹ thuật, Khó khăn và Tối ưu hóa}
+
+\begin{callouttip}[Đảm bảo an toàn luồng và đồng bộ hóa (Concurrency \& Thread Safety)]
+    Trong hệ thống xv6 hỗ trợ đa nhân RISC-V, các tiến trình có thể cấp phát/giải phóng bộ nhớ và thay đổi trạng thái đồng thời trên các core khác nhau. Việc sử dụng khóa \texttt{kmem.lock} và \texttt{p->lock} đảm bảo dữ liệu đọc được luôn chính xác, loại bỏ hoàn toàn hiện tượng dirty read hay race condition. Đồng thời, kỹ thuật khóa hạt mịn (khóa và nhả ngay từng tiến trình trong vòng lặp) giúp giảm thiểu lock contention, không làm gián đoạn bộ lập lịch (\texttt{scheduler}) của hệ thống.
+\end{callouttip}
+
+\begin{calloutwarning}[Phòng chống lỗi bảo mật với Bộ nhớ ảo (Virtual Memory Safety)]
+    Kernel chạy ở chế độ đặc quyền (Supervisor mode) không bao giờ được phép trực tiếp dereference một con trỏ thô (\textit{raw pointer}) được truyền từ User mode, vì tiến trình người dùng có thể gửi một địa chỉ ảo độc hại nhằm đọc lén dữ liệu kernel hoặc gây lỗi sập hệ thống (Kernel Panic). Việc áp dụng nghiêm ngặt hàm \texttt{copyout()} đảm bảo kiểm tra kỹ lưỡng bảng phân trang (\texttt{p->pagetable}) của tiến trình gọi trước khi sao chép. Nếu địa chỉ không hợp lệ, hệ thống từ chối truy cập và trả về mã lỗi \texttt{-1} một cách an toàn.
+\end{calloutwarning}
+
+\subsection{Kết quả kiểm thử thực nghiệm}
+
+\subsubsection{Các kịch bản kiểm thử trong \texttt{sysinfotest}}
+Bộ kiểm thử \texttt{sysinfotest} được thiết kế với 3 bài test trọng tâm:
+\begin{enumerate}
+    \item \textbf{Kiểm tra tính hợp lệ của System Call (\texttt{testcall})}:
+    \begin{itemize}
+        \item Gọi \texttt{sysinfo(\&info)} với con trỏ hợp lệ: kiểm tra system call thực thi thành công (trả về 0).
+        \item Gọi \texttt{sysinfo((struct sysinfo *) 0xeaeb0b5b00002f5e)} với một địa chỉ ảo rác ngoài tầm ánh xạ: kernel phát hiện bất thường và trả về đúng mã \texttt{-1}.
+    \end{itemize}
+    \item \textbf{Kiểm tra tính chính xác của bộ đếm bộ nhớ (\texttt{testmem})}:
+    \begin{itemize}
+        \item Dùng hàm \texttt{sbrk(PGSIZE)} trong vòng lặp vô hạn cho tới khi cạn kiệt bộ nhớ vật lý. Gọi \texttt{sysinfo} kiểm tra \texttt{freemem} chính xác bằng \texttt{0}.
+        \item Trả lại bộ nhớ ban đầu và sau đó cấp phát đúng $1\text{ trang}$ (\texttt{sbrk(PGSIZE)}). Kiểm tra \texttt{freemem} giảm chính xác $4096\text{ bytes}$ so với giá trị trước đó.
+    \end{itemize}
+    \item \textbf{Kiểm tra tính chính xác của bộ đếm tiến trình (\texttt{testproc})}:
+    \begin{itemize}
+        \item Ghi nhận số tiến trình ban đầu $N$.
+        \item Gọi \texttt{fork()} để tạo tiến trình con. Trong tiến trình con, gọi \texttt{sysinfo} kiểm tra \texttt{nproc} tăng chính xác lên $N + 1$.
+        \item Sau khi con kết thúc (\texttt{exit(0)}) và cha thu dọn bằng \texttt{wait()}, gọi lại \texttt{sysinfo} để xác nhận \texttt{nproc} đã giảm trở lại đúng bằng $N$.
+    \end{itemize}
+\end{enumerate}
+
+\subsubsection{Nhật ký chạy kiểm thử thực tế}
+Dưới đây là kết quả thực thi thực tế của các chương trình trên máy ảo QEMU:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ sysinfo
+sysinfo: free memory    = 133238784 bytes (130116 KB / 127 MB)
+sysinfo: active process = 3
+$ sysinfo extra
+usage: sysinfo (no arguments expected)
+$ sysinfotest
+sysinfotest: start
+sysinfotest: OK
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\noindent Kết quả thực thi script chấm điểm tự động \texttt{python3 grade-lab-sysinfo}:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+== Test sysinfo == sysinfo: OK (5.4s) 
+Score: 50/50
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\subsection{Bảng tự đánh giá mức độ hoàn thành}
+\begin{table}[h!]
+    \centering
+    \caption{Tự đánh giá mức độ hoàn thành Chức năng 2 (Sysinfo)}
+    \label{tab:self_eval_sysinfo}
+    \begin{tabularx}{\textwidth}{c X c c}
+        \toprule
+        \textbf{STT} & \textbf{Tiêu chí đánh giá} & \textbf{Yêu cầu} & \textbf{Hoàn thành} \\
+        \midrule
+        1 & Định nghĩa cấu trúc \texttt{struct sysinfo} & Đầy đủ trường \texttt{freemem}, \texttt{nproc} & 100\% \\
+        2 & Đăng ký đầy đủ system call & Thêm syscall vào kernel, usys, user.h & 100\% \\
+        3 & Tính toán dung lượng bộ nhớ rỗi & Duyệt freelist với spinlock an toàn & 100\% \\
+        4 & Đếm số tiến trình đang hoạt động & Duyệt proc table với lock từng tiến trình & 100\% \\
+        5 & Cơ chế sao chép an toàn dữ liệu & Dùng \texttt{copyout()}, xử lý con trỏ sai & 100\% \\
+        6 & Viết ứng dụng người dùng \texttt{sysinfo} & Hiển thị Byte, KB, MB; kiểm tra tham số & 100\% \\
+        7 & Vượt qua bộ kiểm thử tự động & Đạt \texttt{sysinfotest: OK} (50/50 điểm) & 100\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
