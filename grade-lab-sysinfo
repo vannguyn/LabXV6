@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+
+import re
+from gradelib import *
+
+r = Runner(save("xv6.out"))
+
+@test(50, "sysinfo")
+def test_sysinfo():
+    r.run_qemu(shell_script([
+        'sysinfo',
+        'sysinfo extra',
+        'sysinfotest'
+    ]))
+    r.match('sysinfotest: OK')
+
+run_tests()
