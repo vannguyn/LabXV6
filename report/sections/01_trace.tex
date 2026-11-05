@@ -1,0 +1,60 @@
+% chktex-file 36
+\section{Chức năng Trace}
+
+\subsection{Mục tiêu}
+Thêm system call \texttt{trace(mask)} để theo dõi các system call của một tiến trình. Mỗi bit \texttt{n} trong \texttt{mask} tương ứng với system call có số hiệu \texttt{n} (ví dụ \texttt{1 << SYS\_fork}). Khi một system call nằm trong \texttt{mask} trả về, kernel in một dòng gồm pid của tiến trình gọi, tên system call và giá trị trả về. Việc theo dõi áp dụng cho tiến trình gọi \texttt{trace} và mọi tiến trình con do nó \texttt{fork} sau đó, không ảnh hưởng tiến trình khác.
+
+\subsection{Tổ chức triển khai}
+\begin{itemize}
+  \item \texttt{kernel/syscall.h}: thêm \texttt{SYS\_trace} (số 22).
+  \item \texttt{user/usys.pl}, \texttt{user/user.h}: thêm stub và nguyên mẫu \texttt{int trace(int)} để chương trình người dùng gọi được.
+  \item \texttt{kernel/proc.h}: thêm trường \texttt{trace\_mask} vào \texttt{struct proc}.
+  \item \texttt{kernel/sysproc.c}: cài đặt \texttt{sys\_trace()}, lấy đối số bằng \texttt{argint()} và lưu vào \texttt{trace\_mask} của tiến trình hiện tại.
+  \item \texttt{kernel/proc.c}: \texttt{freeproc()} đặt lại \texttt{trace\_mask = 0}; \texttt{fork()} sao chép \texttt{trace\_mask} từ cha sang con.
+  \item \texttt{kernel/syscall.c}: đăng ký \texttt{sys\_trace} vào mảng \texttt{syscalls}, thêm mảng tên \texttt{syscall\_names} và in kết quả trong \texttt{syscall()}.
+  \item \texttt{user/trace.c}: chương trình người dùng \texttt{trace mask command [args...]}; thêm \texttt{\$U/\_trace} vào \texttt{UPROGS} trong \texttt{Makefile}.
+\end{itemize}
+
+\subsection{Luồng xử lý}
+Lệnh \texttt{trace 32 grep hello README} chạy chương trình \texttt{trace}. Chương trình gọi \texttt{trace(32)} để kernel ghi mask vào \texttt{struct proc} của chính nó, rồi gọi \texttt{exec()} để thay thế bằng \texttt{grep}. Vì \texttt{exec()} giữ nguyên \texttt{struct proc} nên mask vẫn còn hiệu lực với \texttt{grep}.
+
+Mỗi lần có system call, \texttt{syscall()} gọi hàm xử lý rồi kiểm tra \texttt{p->trace\_mask \& (1 << num)}. Nếu bit được đặt, kernel in \texttt{<pid>: syscall <tên> -> <giá trị trả về>}. Việc in được thực hiện \emph{sau} khi system call chạy xong để có giá trị trả về. Với \texttt{exit} (không bao giờ trả về) sẽ không có dòng nào được in.
+
+\subsection{Khó khăn và giới hạn}
+\begin{itemize}
+  \item Phải đặt lại \texttt{trace\_mask} trong \texttt{freeproc()}, nếu không một tiến trình mới có thể dùng lại slot cũ và vô tình thừa hưởng mask.
+  \item Mask là kiểu \texttt{int} nên chỉ theo dõi được system call có số hiệu nhỏ hơn 32 (hiện có 22 system call).
+  \item Không in đối số của system call, theo đúng yêu cầu đề bài.
+\end{itemize}
+
+\subsection{Kiểm thử}
+Ghi nhận kết quả chạy thực tế trên xv6 (pid có thể khác giữa các lần chạy; các giá trị trả về của \texttt{read} phụ thuộc nội dung file \texttt{README}):
+
+\begin{center}
+\begin{minipage}{0.86\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ trace 32 grep hello README
+3: syscall read -> 438
+3: syscall read -> 0
+$ trace 2147483647 grep hello README
+4: syscall trace -> 0
+4: syscall exec -> 3
+4: syscall open -> 3
+4: syscall read -> 1023
+4: syscall read -> 991
+4: syscall read -> 438
+4: syscall read -> 0
+4: syscall close -> 0
+$ grep hello README
+$ trace 2 usertests forkforkfork
+usertests starting
+6: syscall fork -> 7
+test forkforkfork: 6: syscall fork -> 8
+8: syscall fork -> 9
+9: syscall fork -> 10
+...
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\noindent Ba kết quả đầu khớp đề: chỉ theo dõi \texttt{read}; theo dõi tất cả system call; và không có đầu ra khi chạy \texttt{grep} trực tiếp. Ở ví dụ thứ tư, các system call \texttt{fork} của mọi tiến trình con cháu đều được in, chứng tỏ mask được kế thừa qua \texttt{fork}.
