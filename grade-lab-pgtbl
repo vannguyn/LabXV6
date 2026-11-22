@@ -1,0 +1,16 @@
+#!/usr/bin/env python3
+
+import re
+from gradelib import *
+
+r = Runner(save("xv6.out"))
+
+@test(40, "ugetpid_test")
+def test_ugetpid():
+    r.run_qemu(shell_script([
+        'ugetpid',
+        'pgtbltest'
+    ]))
+    r.match('ugetpid_test: OK')
+
+run_tests()

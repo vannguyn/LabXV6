@@ -54,6 +54,12 @@
 //   fixed-size stack
 //   expandable heap
 //   ...
+//   USYSCALL (read-only for user, for accelerated syscalls like ugetpid)
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+#define USYSCALL (TRAPFRAME - PGSIZE)
+
+#ifndef __ASSEMBLER__
+#include "usyscall.h"
+#endif
