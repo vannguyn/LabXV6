@@ -1,0 +1,205 @@
+% chktex-file 36
+\section{Chức năng 1: Tăng tốc Lời gọi Hệ thống (Speed up System Calls)}
+
+\subsection{Mục tiêu và Yêu cầu}
+Trong các hệ điều hành nguyên bản, việc thực thi một lời gọi hệ thống thông thường (như \texttt{getpid()}) đòi hỏi phải chuyển đổi ngữ cảnh (\textit{context switch}) từ Không gian người dùng (User space) sang Không gian nhân (Kernel space) thông qua lệnh gọi ngắt phần mềm \texttt{ecall}. Quá trình này tiêu tốn nhiều chu kỳ CPU để lưu lại toàn bộ thanh ghi vào cấu trúc \texttt{trapframe}, chuyển đổi bảng trang, xử lý trap trong kernel, rồi sau đó khôi phục ngữ cảnh để trở lại user mode.
+
+Mục tiêu của bài tập là áp dụng kỹ thuật tối ưu hóa phổ biến trong các hệ điều hành hiện đại (tương tự cơ chế \texttt{vDSO} và \texttt{vsyscall} trên Linux): \textbf{chia sẻ một trang nhớ vật lý ở chế độ chỉ đọc (Read-only) giữa kernel và user space}. 
+\begin{itemize}
+    \item \textbf{Cấu trúc \texttt{struct usyscall}} (được định nghĩa trong \texttt{kernel/usyscall.h}):
+    Chứa trường \texttt{int pid} lưu định danh của tiến trình hiện hành.
+    \item \textbf{Địa chỉ ảo chia sẻ \texttt{USYSCALL}} (trong \texttt{kernel/memlayout.h}):
+    Nằm ở đỉnh không gian địa chỉ ảo của tiến trình, ngay dưới trang \texttt{TRAPFRAME} đúng 1 trang:
+    \begin{equation}
+        \texttt{USYSCALL} = \texttt{TRAPFRAME} - \texttt{PGSIZE}
+    \end{equation}
+    \item \textbf{Phía người dùng}: Cung cấp hàm \texttt{int ugetpid(void)} trong thư viện người dùng (\texttt{user/ulib.c}) để đọc trực tiếp giá trị PID từ địa chỉ \texttt{USYSCALL} mà không cần thực hiện system call.
+    \item \textbf{Đánh giá}: Vượt qua toàn bộ các kiểm thử trong \texttt{ugetpid\_test} thuộc chương trình \texttt{pgtbltest}.
+\end{itemize}
+
+\subsection{Tổ chức Triển khai}
+Các thành phần tệp tin được bổ sung và cập nhật trong mã nguồn xv6 bao gồm:
+\begin{itemize}
+    \item \texttt{kernel/usyscall.h}: Khởi tạo file tiêu đề mới định nghĩa cấu trúc dữ liệu chia sẻ \texttt{struct usyscall}. File được bảo vệ bởi bộ tiền xử lý \texttt{\#ifndef \_\_ASSEMBLER\_\_} để tránh lỗi biên dịch khi các file hợp ngữ (như \texttt{trampoline.S}) nạp chéo.
+    \item \texttt{kernel/memlayout.h}: Khai báo hằng số địa chỉ ảo \texttt{USYSCALL} nằm ngay dưới \texttt{TRAPFRAME} và nhúng \texttt{kernel/usyscall.h}.
+    \item \texttt{kernel/proc.h}: Bổ sung con trỏ \texttt{struct usyscall *usyscall} vào cấu trúc quản lý tiến trình \texttt{struct proc}.
+    \item \texttt{kernel/proc.c}:
+    \begin{itemize}
+        \item Trong \texttt{allocproc()}: Cấp phát một trang bộ nhớ vật lý cho \texttt{p->usyscall} bằng hàm \texttt{kalloc()} và khởi tạo \texttt{p->usyscall->pid = p->pid}.
+        \item Trong \texttt{proc\_pagetable()}: Ánh xạ địa chỉ ảo \texttt{USYSCALL} tới trang vật lý \texttt{p->usyscall} với cờ quyền \texttt{PTE\_R | PTE\_U} (cho phép user chỉ được đọc).
+        \item Trong \texttt{freeproc()}: Giải phóng trang nhớ vật lý bằng \texttt{kfree((void*)p->usyscall)} và đặt lại con trỏ về \texttt{0}.
+        \item Trong \texttt{proc\_freepagetable()}: Hủy ánh xạ địa chỉ \texttt{USYSCALL} bằng hàm \texttt{uvmunmap(pagetable, USYSCALL, 1, 0)}.
+    \end{itemize}
+    \item \texttt{user/user.h}: Khai báo nguyên mẫu hàm thư viện người dùng \texttt{int ugetpid(void);}.
+    \item \texttt{user/ulib.c}: Cài đặt hàm \texttt{ugetpid(void)} thực hiện đọc trực tiếp trường \texttt{pid} thông qua ép kiểu con trỏ tại địa chỉ \texttt{USYSCALL}.
+    \item \texttt{user/pgtbltest.c}: Chương trình kiểm thử tự động chạy kiểm tra tính chính xác của \texttt{ugetpid()} qua 64 tiến trình con phân nhánh (\texttt{fork}).
+    \item \texttt{user/ugetpid.c}: Tiện ích kiểm thử trực tiếp trên dòng lệnh shell, so sánh đầu ra giữa \texttt{getpid()} truyền thống và \texttt{ugetpid()} tăng tốc.
+    \item \texttt{Makefile}: Thêm các chương trình kiểm thử \texttt{\$U/\_pgtbltest} và \texttt{\$U/\_ugetpid} vào danh sách nạp đĩa \texttt{UPROGS}.
+    \item \texttt{answers-pgtbl.txt}: Trả lời chi tiết câu hỏi mở rộng về các system call khác có thể tăng tốc bằng kỹ thuật tương tự.
+\end{itemize}
+
+\subsection{Thiết kế Giải thuật và Luồng Xử lý}
+
+\subsubsection{Cấu hình Không gian Địa chỉ và Cấu trúc Dữ liệu}
+Tại \texttt{kernel/memlayout.h}, địa chỉ ảo \texttt{USYSCALL} được định vị ngay dưới \texttt{TRAPFRAME}:
+
+\begin{lstlisting}[language=C, caption={Định nghĩa địa chỉ ảo và cấu trúc usyscall}]
+#define TRAPFRAME (TRAMPOLINE - PGSIZE)
+#define USYSCALL  (TRAPFRAME - PGSIZE)
+
+#ifndef __ASSEMBLER__
+struct usyscall {
+  int pid; // Process ID
+};
+#endif
+\end{lstlisting}
+
+\subsubsection{Cấp phát và Ánh xạ Trang Chia sẻ trong Vòng đời Tiến trình}
+Quy trình quản lý trang nhớ \texttt{usyscall} xuyên suốt vòng đời của tiến trình được thực thi theo các bước chuẩn:
+
+\begin{enumerate}
+    \item \textbf{Khởi tạo tiến trình (\texttt{allocproc})}: Ngay sau khi cấp phát cấu trúc \texttt{trapframe}, kernel thực hiện cấp phát một trang vật lý mới cho \texttt{p->usyscall} bằng \texttt{kalloc()}. Giá trị PID của tiến trình được gán trực tiếp vào trường \texttt{p->usyscall->pid}:
+\begin{lstlisting}[language=C, caption={Cấp phát trang usyscall trong allocproc()}]
+  // Allocate a usyscall page.
+  if((p->usyscall = (struct usyscall *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  p->usyscall->pid = p->pid;
+\end{lstlisting}
+
+    \item \textbf{Thiết lập Bảng trang (\texttt{proc\_pagetable})}: Sau khi ánh xạ \texttt{TRAMPOLINE} và \texttt{TRAPFRAME}, tiến hành gọi hàm \texttt{mappages()} để gắn địa chỉ ảo \texttt{USYSCALL} vào địa chỉ vật lý \texttt{p->usyscall}. Điểm mấu chốt là thiết lập quyền truy cập: \texttt{PTE\_R | PTE\_U} (Người dùng chỉ có quyền Đọc, tuyệt đối không có quyền Ghi \texttt{PTE\_W} hay Thực thi \texttt{PTE\_X}):
+\begin{lstlisting}[language=C, caption={Ánh xạ trang USYSCALL trong proc\_pagetable()}]
+  // map the usyscall page just below the trapframe page, for
+  // accelerated system calls. Read-only for user.
+  if(mappages(pagetable, USYSCALL, PGSIZE,
+              (uint64)(p->usyscall), PTE_R | PTE_U) < 0){
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+\end{lstlisting}
+
+    \item \textbf{Gỡ bỏ và Giải phóng Bộ nhớ (\texttt{proc\_freepagetable} và \texttt{freeproc})}:
+    \begin{itemize}
+        \item Khi hủy bảng trang trong \texttt{proc\_freepagetable()}, gọi \texttt{uvmunmap(pagetable, USYSCALL, 1, 0)}. Tham số \texttt{do\_free = 0} được truyền vào vì trang vật lý này thuộc quản lý riêng của cấu trúc tiến trình, tương tự như \texttt{TRAPFRAME}.
+        \item Khi giải phóng tiến trình trong \texttt{freeproc()}, trang nhớ vật lý mới chính thức được giải phóng qua \texttt{kfree((void*)p->usyscall)} và con trỏ được đặt về \texttt{0} để tránh lỗi dangling pointer:
+    \end{itemize}
+\begin{lstlisting}[language=C, caption={Thu hồi trang usyscall trong freeproc()}]
+  if(p->usyscall)
+    kfree((void*)p->usyscall);
+  p->usyscall = 0;
+\end{lstlisting}
+\end{enumerate}
+
+\subsubsection{Truy xuất Dữ liệu Nhanh ở User Space (\texttt{ugetpid})}
+Tại phía người dùng, hàm \texttt{ugetpid()} không hề phát sinh bất kỳ lời gọi hệ thống hay lệnh ngắt \texttt{ecall} nào. Thay vào đó, hàm truy cập trực tiếp vào vùng nhớ đã được ánh xạ:
+
+\begin{lstlisting}[language=C, caption={Cài đặt hàm ugetpid() trong user/ulib.c}]
+int
+ugetpid(void)
+{
+  struct usyscall *u = (struct usyscall *)USYSCALL;
+  return u->pid;
+}
+\end{lstlisting}
+
+\subsection{Các Giải pháp Kỹ thuật, An toàn và Tối ưu hóa}
+
+\begin{calloutwarning}[Phân quyền Bảo vệ Bộ nhớ Ảo (Memory Protection)]
+    Trang chia sẻ \texttt{USYSCALL} bắt buộc phải được gắn cờ \texttt{PTE\_R | PTE\_U} và nghiêm cấm cờ \texttt{PTE\_W}. Nếu kernel vô tình cấp quyền ghi cho người dùng, một tiến trình độc hại có thể sửa đổi trường \texttt{pid} của chính nó để mạo danh tiến trình khác, phá vỡ tính toàn vẹn và cơ chế kiểm soát truy cập của hệ điều hành. Nhờ cơ chế phần cứng MMU của RISC-V, mọi thao tác ghi vào địa chỉ \texttt{USYSCALL} từ User mode sẽ lập tức kích hoạt lỗi phân trang (\textit{Page Fault Exception}) và bị kernel chấm dứt.
+\end{calloutwarning}
+
+\begin{callouttip}[Quản lý Vòng đời và Chống Rò rỉ Bộ nhớ (Leak Prevention)]
+    Cơ chế thu hồi trang nhớ tuân thủ nguyên tắc đối xứng nghiêm ngặt:
+    \begin{itemize}
+        \item Tại \texttt{proc\_pagetable()}: Nếu việc ánh xạ \texttt{USYSCALL} thất bại, mã nguồn tự động thu dọn các trang đã ánh xạ trước đó (\texttt{TRAPFRAME}, \texttt{TRAMPOLINE}) và giải phóng bảng trang rỗng bằng \texttt{uvmfree()}. Sau đó, \texttt{freeproc()} sẽ thu hồi trang vật lý \texttt{p->usyscall}.
+        \item Khi tiến trình con được tạo qua \texttt{fork()}: Hàm \texttt{allocproc()} tự động cấp phát một trang \texttt{usyscall} hoàn toàn độc lập cho tiến trình con với PID của con. Hàm \texttt{uvmcopy()} chỉ sao chép bộ nhớ người dùng từ địa chỉ 0 đến \texttt{p->sz}, hoàn toàn không sao chép đè lên trang \texttt{USYSCALL}.
+    \end{itemize}
+\end{callouttip}
+
+\begin{calloutnote}[Tương thích với Mã nguồn Hợp ngữ (Assembly Compatibility)]
+    Tệp \texttt{kernel/memlayout.h} được nhúng vào cả các tệp hợp ngữ cấp thấp như \texttt{kernel/trampoline.S}. Vì trình hợp ngữ của GCC không hiểu cú pháp khai báo \texttt{struct} của C, định nghĩa \texttt{struct usyscall} bắt buộc phải được bao bọc bởi tiền xử lý \texttt{\#ifndef \_\_ASSEMBLER\_\_}. Điều này giúp hệ thống biên dịch mượt mà không gặp lỗi cú pháp.
+\end{calloutnote}
+
+\subsection{Trả lời Câu hỏi Mở rộng của Bài Lab}
+\textbf{Câu hỏi}: \textit{Những lệnh gọi hệ thống nào khác trong xv6 có thể được tăng tốc bằng cách sử dụng trang chia sẻ này? Hãy giải thích.}
+
+\textbf{Trả lời}:
+\begin{enumerate}
+    \item \textbf{Lệnh gọi hệ thống \texttt{uptime()}}:
+    \begin{itemize}
+        \item \textit{Nguyên lý}: \texttt{uptime()} trả về số lượng xung nhịp đồng hồ (\texttt{ticks}) kể từ khi hệ thống khởi động. 
+        \item \textit{Cách tối ưu}: Kernel có thể đưa thêm trường \texttt{uint ticks} vào trang chia sẻ chỉ đọc và cập nhật trường này mỗi khi xảy ra ngắt định thời gian (trong hàm \texttt{clockintr()} tại \texttt{kernel/trap.c}). Phía người dùng có thể đọc trực tiếp thời gian mà không cần chuyển ngữ cảnh vào kernel.
+    \end{itemize}
+    \item \textbf{Lệnh gọi hệ thống \texttt{getppid()} (lấy PID của tiến trình cha)}:
+    \begin{itemize}
+        \item \textit{Nguyên lý}: PID của tiến trình cha là thông tin tĩnh, chỉ thay đổi trong trường hợp hiếm hoi khi tiến trình cha kết thúc trước và con được bàn giao (\textit{reparent}) cho tiến trình \texttt{init}.
+        \item \textit{Cách tối ưu}: Lưu \texttt{ppid} vào \texttt{struct usyscall} lúc \texttt{fork()}, và kernel cập nhật lại giá trị này trong hàm \texttt{exit()} nếu tiến trình cha chết.
+    \end{itemize}
+    \item \textbf{Tương đồng với cơ chế \texttt{vDSO} trên Linux}:
+    Trên Linux hiện đại, cơ chế vDSO/vsyscall chia sẻ các thông số thời gian (\texttt{clock\_gettime}, \texttt{gettimeofday}) và thông số vi xử lý tĩnh (\texttt{getcpu}) để các ứng dụng có tần suất đo thời gian cao không bị suy giảm hiệu năng do overhead của ngắt hệ thống.
+\end{enumerate}
+
+\subsection{Kết quả Kiểm thử Thực nghiệm}
+
+\subsubsection{Các Kịch bản Kiểm thử}
+\begin{enumerate}
+    \item \textbf{Kiểm thử đối chiếu \texttt{ugetpid}}: Chạy tiện ích dòng lệnh kiểm tra giá trị trả về của lời gọi hệ thống tiêu chuẩn \texttt{getpid()} và hàm đọc trang nhớ chia sẻ \texttt{ugetpid()}. Hai giá trị này phải trùng khớp hoàn toàn.
+    \item \textbf{Kiểm thử tải đa tiến trình \texttt{ugetpid\_test} trong \texttt{pgtbltest}}: Khởi tạo vòng lặp 64 lần gọi \texttt{fork()}. Mỗi tiến trình con độc lập so sánh \texttt{getpid() == ugetpid()}. Đảm bảo mỗi tiến trình con đều có trang \texttt{USYSCALL} riêng biệt phản ánh đúng PID của chính nó, không bị xung đột bộ nhớ giữa cha và con.
+\end{enumerate}
+
+\subsubsection{Nhật ký Chạy Thực tế trên xv6 (QEMU)}
+Dưới đây là kết quả thực thi ghi nhận thực tế trên shell của xv6:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+$ ugetpid
+=== Testing accelerated system call ===
+  getpid() (standard syscall) = 3
+  ugetpid() (shared USYSCALL) = 3
+SUCCESS: PID values match! USYSCALL mapping is functioning properly.
+$ pgtbltest
+pgtbltest: start
+ugetpid_test starting
+ugetpid_test: OK
+pgtbltest: OK
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\noindent Kết quả thực thi kịch bản chấm điểm tự động \texttt{python3 grade-lab-pgtbl}:
+
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+== Test ugetpid_test == ugetpid_test: OK (2.6s) 
+Score: 40/40
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\subsection{Bảng Tự Đánh giá Mức độ Hoàn thành}
+\begin{table}[h!]
+    \centering
+    \caption{Tự đánh giá mức độ hoàn thành Chức năng 1 (Tăng tốc System Call)}
+    \label{tab:self_eval_ugetpid}
+    \begin{tabularx}{\textwidth}{c X c c}
+        \toprule
+        \textbf{STT} & \textbf{Tiêu chí đánh giá} & \textbf{Yêu cầu kỹ thuật} & \textbf{Mức độ} \\
+        \midrule
+        1 & Định nghĩa hằng địa chỉ \texttt{USYSCALL} & Đúng vị trí (\texttt{TRAPFRAME - PGSIZE}) & 100\% \\
+        2 & Định nghĩa cấu trúc \texttt{struct usyscall} & Chứa trường \texttt{int pid}, chống lỗi asm & 100\% \\
+        3 & Cấp phát và khởi tạo bộ nhớ & Cấp phát trang bằng \texttt{kalloc}, gán PID & 100\% \\
+        4 & Ánh xạ vào bảng trang & Dùng \texttt{mappages} với quyền \texttt{PTE\_R | PTE\_U} & 100\% \\
+        5 & Quản lý thu hồi bộ nhớ & Giải phóng trang trong \texttt{freeproc}, unmap đúng & 100\% \\
+        6 & Cài đặt hàm \texttt{ugetpid()} ở user space & Đọc trực tiếp từ địa chỉ \texttt{USYSCALL} & 100\% \\
+        7 & Viết tiện ích kiểm thử người dùng & Chương trình \texttt{ugetpid} và \texttt{pgtbltest} & 100\% \\
+        8 & Điểm kiểm thử tự động & Vượt qua \texttt{ugetpid\_test} (40/40 điểm) & 100\% \\
+        9 & Trả lời câu hỏi mở rộng & Đầy đủ trong \texttt{answers-pgtbl.txt} và báo cáo & 100\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}

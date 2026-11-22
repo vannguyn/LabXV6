@@ -14,14 +14,14 @@
 
 \courseid{CSC10007}
 \coursename{HỆ ĐIỀU HÀNH}
-\reportsubtitle{BÁO CÁO PROJECT 2: SYSTEM CALL}
-\title{CÀI ĐẶT CÁC LỜI GỌI HỆ THỐNG TRONG HỆ ĐIỀU HÀNH XV6}
-\instructor{Lê Viết Long}
+\reportsubtitle{BÁO CÁO PROJECT 3: BẢNG TRANG (PAGE TABLE)}
+\title{TÌM HIỂU VÀ MỞ RỘNG BẢNG TRANG TRONG HỆ ĐIỀU HÀNH XV6}
+\instructor{ThS. Lê Viết Long}
 \classid{24\_22}
 \academicyear{Học kỳ I, 2026--2027}
 \author{\begin{tabular}{l@{\hspace{1.5cm}}l}
     \textbf{MSSV} & \textbf{Họ và tên} \\
-    23120013 & Nghiêm Lê Duy Anh (Chức năng 2) \\
+    23120013 & Nghiêm Lê Duy Anh (Chức năng 1: Tăng tốc system call) \\
     24120205 & Trần Văn Nguyên \\
     24120471 & ...
 \end{tabular}}
@@ -30,13 +30,13 @@
 \pagestyle{fancy}
 \makecoverpage
 
-% Chức năng 1 (Trace) do thành viên khác phụ trách
-% \input{sections/01_trace}
+% Chức năng 1 (Tăng tốc system call) - Phần của Nghiêm Lê Duy Anh
+\input{sections/01_speedup_syscall}
 
-% Chức năng 2 (Sysinfo) - Phần của Nghiêm Lê Duy Anh
-\input{sections/02_sysinfo}
+% Chức năng 2 (In bảng trang - vmprint) do thành viên khác phụ trách
+% \input{sections/02_vmprint}
 
-% Chức năng 3 (Process Tree) do thành viên khác phụ trách
-% \input{sections/03_ptree}
+% Chức năng 3 (Phát hiện các trang đã truy cập - pgaccess) do thành viên khác phụ trách
+% \input{sections/03_pgaccess}
 
 \end{document}

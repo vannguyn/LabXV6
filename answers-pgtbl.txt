@@ -1,0 +1,13 @@
+Câu hỏi thêm: Những lệnh gọi hệ thống nào khác trong xv6 có thể được tăng tốc bằng cách sử dụng trang chia sẻ này? Hãy giải thích.
+
+Trả lời:
+1. uptime():
+   - Giải thích: Lệnh gọi hệ thống uptime() chỉ cần đọc giá trị biến toàn cục `ticks` trong kernel để biết thời gian đã trôi qua kể từ khi hệ thống khởi động. 
+   - Cách thực hiện: Kernel có thể cập nhật trường `ticks` trong một cấu trúc dữ liệu hoặc trang bộ nhớ chia sẻ ở mỗi ngắt đồng hồ (timer interrupt trong `clockintr()`). Phía người dùng có thể đọc trực tiếp giá trị này từ không gian người dùng mà không cần thực hiện chuyển ngữ cảnh (context switch) tốn kém qua lời gọi hệ thống `ecall`.
+
+2. getppid() (lấy Process ID của tiến trình cha):
+   - Giải thích: PID của tiến trình cha (`ppid`) là thông tin tĩnh hoặc hiếm khi thay đổi trong suốt vòng đời của tiến trình con.
+   - Cách thực hiện: Kernel có thể lưu `ppid` vào `struct usyscall` tại thời điểm tạo tiến trình con (`fork()`). Nếu tiến trình cha kết thúc trước và con được bàn giao (reparent) cho tiến trình `init`, kernel chỉ cần cập nhật lại giá trị `ppid` này. Phía người dùng có thể đọc tức thì mà không cần chuyển vào kernel.
+
+3. time() / gettimeofday() (tương tự vDSO / vsyscall trên Linux):
+   - Giải thích: Trên các hệ điều hành hiện đại như Linux, cơ chế vDSO (virtual Dynamic Shared Object) và vsyscall dùng chính nguyên lý trang chia sẻ chỉ đọc này để tăng tốc các hàm lấy thời gian như `clock_gettime()`, `gettimeofday()`, hay các thông tin phần cứng tĩnh của CPU.

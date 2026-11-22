@@ -203,6 +203,8 @@ UPROGS=\
 	$U/_tree\
 	$U/_sysinfo\
 	$U/_sysinfotest\
+	$U/_pgtbltest\
+	$U/_ugetpid\
 
 
 
