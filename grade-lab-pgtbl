@@ -5,6 +5,46 @@ from gradelib import *
 
 r = Runner(save("xv6.out"))
 
+# Expected shape of init's page table as printed by vmprint():
+# (prefix, low PTE flag bits V|R|W|X|U). Physical addresses vary
+# from run to run, so only the tree shape and permissions are checked.
+# With LAB_UTIL the user stack is USERSTACK = 2 pages (va 3 and 4).
+PTE_PRINT = [
+    (" ..0",          0x01),  # level-2 -> level-1 table
+    (" .. ..0",       0x01),  # level-1 -> level-0 table
+    (" .. .. ..0",    0x1b),  # text:  V R X U
+    (" .. .. ..1",    0x17),  # data:  V R W U
+    (" .. .. ..2",    0x07),  # guard: V R W (no U)
+    (" .. .. ..3",    0x17),  # stack: V R W U
+    (" .. .. ..4",    0x17),  # stack: V R W U
+    (" ..255",        0x01),
+    (" .. ..511",     0x01),
+    (" .. .. ..509",  0x13),  # USYSCALL:   V R U
+    (" .. .. ..510",  0x07),  # TRAPFRAME:  V R W
+    (" .. .. ..511",  0x0b),  # TRAMPOLINE: V R X
+]
+
+@test(0, "running vmprint")
+def test_vmprint_run():
+    r.run_qemu(shell_script([
+        'echo hi'
+    ]))
+    r.match('^hi')
+
+@test(30, "pte printout", parent=test_vmprint_run)
+def test_pteprint():
+    out = r.qemu.output
+    m = re.search(r'^page table (0x[0-9a-f]{16})\s*$', out, re.MULTILINE)
+    assert m, "missing 'page table 0x...' header"
+    lines = re.findall(r'^( (?:\.\. ?)+\d+): pte (0x[0-9a-f]{16}) pa (0x[0-9a-f]{16})\s*$',
+                       out[m.end():], re.MULTILINE)
+    assert_equal(len(lines), len(PTE_PRINT), "number of PTE lines")
+    for (prefix, pte, pa), (want_prefix, want_flags) in zip(lines, PTE_PRINT):
+        pte = int(pte, 16)
+        assert_equal(prefix, want_prefix)
+        assert_equal(hex(pte & 0x1f), hex(want_flags), "flags of " + prefix)
+        assert_equal(int(pa, 16), (pte >> 10) << 12, "pa of " + prefix)
+
 @test(40, "ugetpid_test")
 def test_ugetpid():
     r.run_qemu(shell_script([

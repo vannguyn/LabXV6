@@ -293,6 +293,35 @@ freewalk(pagetable_t pagetable)
   kfree((void*)pagetable);
 }
 
+// Recursive helper for vmprint(): print every valid PTE of
+// pagetable, prefixed by `depth` groups of " ..", and descend
+// into lower-level page tables.
+static void
+vmprint_level(pagetable_t pagetable, int depth)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) == 0)
+      continue;
+    uint64 pa = PTE2PA(pte);
+    for(int d = 0; d < depth; d++)
+      printf(" ..");
+    printf("%d: pte %p pa %p\n", i, (void *)pte, (void *)pa);
+    // A valid PTE with none of R/W/X points to a lower-level table.
+    if((pte & (PTE_R|PTE_W|PTE_X)) == 0)
+      vmprint_level((pagetable_t)pa, depth + 1);
+  }
+}
+
+// Print the contents of a page table, one line per valid PTE.
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", (void *)pagetable);
+  vmprint_level(pagetable, 1);
+}
+
 // Free user memory pages,
 // then free page-table pages.
 void

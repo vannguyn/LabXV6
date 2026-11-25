@@ -1,0 +1,191 @@
+% chktex-file 36
+\section{Chức năng 2: In Bảng trang (Print a Page Table)}
+
+\subsection{Mục tiêu và Yêu cầu}
+Bảng trang là cấu trúc dữ liệu trung tâm của bộ nhớ ảo, nhưng nó nằm hoàn toàn trong bộ nhớ của kernel nên rất khó quan sát trực tiếp. Chức năng này xây dựng hàm \texttt{vmprint()} để in nội dung một bảng trang RISC-V Sv39 ra console, giúp hình dung cấu trúc cây ba cấp và hỗ trợ gỡ lỗi cho các chức năng khác (ví dụ \texttt{pgaccess}).
+
+Yêu cầu cụ thể của đề bài:
+\begin{itemize}
+    \item Định nghĩa hàm \texttt{void vmprint(pagetable\_t)} in bảng trang theo đúng định dạng mẫu.
+    \item Chèn lệnh \texttt{if (p->pid == 1) vmprint(p->pagetable)} ngay trước \texttt{return argc} trong \texttt{exec()} để in bảng trang của tiến trình \texttt{init} khi khởi động.
+    \item Dòng đầu tiên in địa chỉ của bảng trang gốc. Mỗi dòng sau in một PTE hợp lệ gồm: chỉ số PTE trong trang bảng, giá trị PTE và địa chỉ vật lý suy ra từ PTE. Số nhóm ``\texttt{ ..}'' thể hiện độ sâu của PTE trong cây. PTE không hợp lệ thì không in.
+    \item Giải thích nội dung logic và các bit quyền của từng trang lá trong kết quả in ra.
+\end{itemize}
+
+\subsection{Tổ chức Triển khai}
+\begin{itemize}
+    \item \texttt{kernel/vm.c}: Thêm hàm đệ quy nội bộ \texttt{vmprint\_level()} và hàm công khai \texttt{vmprint()}.
+    \item \texttt{kernel/defs.h}: Khai báo nguyên mẫu \texttt{void vmprint(pagetable\_t);} trong nhóm hàm của \texttt{vm.c} để \texttt{exec.c} gọi được.
+    \item \texttt{kernel/exec.c}: Gọi \texttt{vmprint(p->pagetable)} khi \texttt{p->pid == 1}, sau khi bảng trang mới đã được gán cho tiến trình và bảng trang cũ đã được giải phóng.
+    \item \texttt{grade-lab-pgtbl}: Bổ sung bài kiểm thử tự động \texttt{pte printout} để kiểm tra định dạng và cấu trúc của kết quả in.
+\end{itemize}
+
+\subsection{Thiết kế Giải thuật}
+
+\subsubsection{Cấu trúc bảng trang Sv39}
+Xv6 dùng chế độ phân trang Sv39 của RISC-V. Một địa chỉ ảo 39 bit được chia thành ba chỉ số 9 bit (L2, L1, L0) và 12 bit offset. Mỗi trang bảng có $2^9 = 512$ PTE, mỗi PTE 64 bit gồm số trang vật lý (PPN, bit 10--53) và 10 bit cờ ở phía thấp: \texttt{V} (bit 0), \texttt{R} (1), \texttt{W} (2), \texttt{X} (3), \texttt{U} (4), \texttt{G}, \texttt{A}, \texttt{D}. Theo đặc tả RISC-V, một PTE hợp lệ mà cả ba bit \texttt{R}, \texttt{W}, \texttt{X} đều bằng 0 là con trỏ trỏ tới trang bảng cấp dưới. Ngược lại, PTE đó là \textbf{lá}, ánh xạ trực tiếp tới một trang dữ liệu.
+
+\subsubsection{Duyệt cây bằng đệ quy}
+Cách phân biệt nút trong và lá ở trên chính là cách hàm \texttt{freewalk()} có sẵn trong \texttt{vm.c} duyệt cây. \texttt{vmprint()} áp dụng cùng ý tưởng: in dòng tiêu đề rồi gọi hàm phụ đệ quy với độ sâu ban đầu là 1.
+
+\begin{lstlisting}[language=C, caption={Hàm vmprint() và hàm phụ vmprint\_level() trong kernel/vm.c}]
+static void
+vmprint_level(pagetable_t pagetable, int depth)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if((pte & PTE_V) == 0)
+      continue;
+    uint64 pa = PTE2PA(pte);
+    for(int d = 0; d < depth; d++)
+      printf(" ..");
+    printf("%d: pte %p pa %p\n", i, (void *)pte, (void *)pa);
+    // A valid PTE with none of R/W/X points to a lower-level table.
+    if((pte & (PTE_R|PTE_W|PTE_X)) == 0)
+      vmprint_level((pagetable_t)pa, depth + 1);
+  }
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", (void *)pagetable);
+  vmprint_level(pagetable, 1);
+}
+\end{lstlisting}
+
+Các điểm thiết kế chính:
+\begin{itemize}
+    \item \textbf{Bỏ qua PTE không hợp lệ}: kiểm tra bit \texttt{PTE\_V} trước tiên, đúng yêu cầu ``PTE không hợp lệ sẽ không được in''.
+    \item \textbf{Tính địa chỉ vật lý}: dùng macro \texttt{PTE2PA(pte)} trong \texttt{kernel/riscv.h}, tức \texttt{(pte >> 10) << 12}.
+    \item \textbf{In số 64 bit}: dùng \texttt{\%p} của \texttt{printf} trong kernel. Định dạng này luôn in đủ 16 chữ số hexa, giống mẫu của đề.
+    \item \textbf{Độ sâu}: mỗi cấp thêm một nhóm ``\texttt{ ..}''. Cấp gốc có 1 nhóm, cấp lá có 3 nhóm.
+    \item \textbf{An toàn khi đệ quy}: kernel ánh xạ đồng nhất (identity map) toàn bộ RAM, nên có thể ép kiểu trực tiếp địa chỉ vật lý \texttt{pa} thành con trỏ \texttt{pagetable\_t}. Độ sâu đệ quy tối đa là 3, nên không có nguy cơ tràn ngăn xếp kernel. Hàm chỉ đọc bảng trang, không sửa hay giải phóng gì.
+\end{itemize}
+
+\subsubsection{Vị trí gọi trong exec()}
+\begin{lstlisting}[language=C, caption={Gọi vmprint() trong kernel/exec.c}]
+  proc_freepagetable(oldpagetable, oldsz);
+
+  if(p->pid == 1)
+    vmprint(p->pagetable);
+
+  return argc; // this ends up in a0, the first argument to main(argc, argv)
+\end{lstlisting}
+Lệnh gọi đặt ở cuối \texttt{exec()}, lúc \texttt{p->pagetable} đã là bảng trang mới hoàn chỉnh của chương trình \texttt{/init}: đã nạp đoạn mã, dữ liệu, ngăn xếp và các trang đặc biệt. Điều kiện \texttt{pid == 1} đảm bảo bảng trang chỉ được in một lần khi khởi động, không làm rối đầu ra của các chương trình khác.
+
+\subsection{Kết quả và Giải thích Bảng trang của init}
+
+\subsubsection{Kết quả in thực tế}
+Khi chạy \texttt{make qemu}, xv6 in ra bảng trang của \texttt{init} như sau. Địa chỉ vật lý có thể khác giữa các lần chạy.
+
+\begin{center}
+\begin{minipage}{0.95\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+page table 0x0000000087f4d000
+ ..0: pte 0x0000000021fd2401 pa 0x0000000087f49000
+ .. ..0: pte 0x0000000021fd2001 pa 0x0000000087f48000
+ .. .. ..0: pte 0x0000000021fd281b pa 0x0000000087f4a000
+ .. .. ..1: pte 0x0000000021fd1c17 pa 0x0000000087f47000
+ .. .. ..2: pte 0x0000000021fd1807 pa 0x0000000087f46000
+ .. .. ..3: pte 0x0000000021fd1417 pa 0x0000000087f45000
+ .. .. ..4: pte 0x0000000021fd1017 pa 0x0000000087f44000
+ ..255: pte 0x0000000021fd3001 pa 0x0000000087f4c000
+ .. ..511: pte 0x0000000021fd2c01 pa 0x0000000087f4b000
+ .. .. ..509: pte 0x0000000021fd5413 pa 0x0000000087f55000
+ .. .. ..510: pte 0x0000000021fd5807 pa 0x0000000087f56000
+ .. .. ..511: pte 0x000000002000180b pa 0x0000000080006000
+init: starting sh
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\subsubsection{Phân tích cấu trúc cây}
+\begin{itemize}
+    \item \textbf{Cấp gốc (L2)} chỉ có hai PTE hợp lệ là \texttt{0} và \texttt{255}, đều có giá trị cờ \texttt{0x01} (chỉ bit \texttt{V}), tức là trỏ tới trang bảng cấp dưới. Chỉ số lớn nhất là 255 chứ không phải 511 vì xv6 đặt \texttt{MAXVA} $= 2^{38}$, thấp hơn 1 bit so với 39 bit của Sv39, để tránh phải mở rộng dấu (sign extension) cho các địa chỉ có bit 38 bằng 1.
+    \item \textbf{Nhánh \texttt{0} $\to$ \texttt{0}} quản lý vùng địa chỉ thấp, bắt đầu từ 0. Đây là nơi chứa mã, dữ liệu và ngăn xếp của chương trình.
+    \item \textbf{Nhánh \texttt{255} $\to$ \texttt{511}} quản lý vùng địa chỉ cao nhất ngay dưới \texttt{MAXVA}, nơi chứa các trang đặc biệt \texttt{USYSCALL}, \texttt{TRAPFRAME} và \texttt{TRAMPOLINE}.
+    \item Ví dụ giải mã PTE \texttt{0x21fd281b}: 10 bit thấp là \texttt{0x01b}; PPN là \texttt{0x21fd281b >> 10}, tức \texttt{0x87f4a}; do đó \texttt{pa} là \texttt{0x87f4a << 12}, tức \texttt{0x87f4a000}, khớp với cột \texttt{pa}.
+\end{itemize}
+
+\subsubsection{Giải thích từng trang lá}
+Địa chỉ ảo (VA) của mỗi trang lá được tính theo công thức $\text{VA} = (L2 \ll 30) \mid (L1 \ll 21) \mid (L0 \ll 12)$.
+
+\begin{table}[h!]
+    \centering
+    \caption{Nội dung logic và bit quyền của các trang lá trong bảng trang của init}
+    \label{tab:vmprint_leaves}
+    \small
+    \begin{tabularx}{\textwidth}{l l c l X}
+        \toprule
+        \textbf{Chỉ số} & \textbf{VA} & \textbf{Cờ} & \textbf{Bit} & \textbf{Nội dung logic} \\
+        \midrule
+        0/0/0 & \texttt{0x0} & \texttt{0x1b} & V R X U & Đoạn mã (\texttt{.text}) của \texttt{init}: user được đọc và thực thi, không được ghi. \\
+        0/0/1 & \texttt{0x1000} & \texttt{0x17} & V R W U & Đoạn dữ liệu (\texttt{.data}, \texttt{.bss}): user được đọc và ghi, không được thực thi. \\
+        0/0/2 & \texttt{0x2000} & \texttt{0x07} & V R W & \textbf{Trang bảo vệ} (guard page) nằm dưới ngăn xếp. \texttt{exec()} gọi \texttt{uvmclear()} để xóa bit \texttt{U}, nên khi ngăn xếp tràn xuống trang này thì user truy cập sẽ gây page fault thay vì âm thầm ghi đè dữ liệu. \\
+        0/0/3 & \texttt{0x3000} & \texttt{0x17} & V R W U & Trang ngăn xếp user thứ nhất. \\
+        0/0/4 & \texttt{0x4000} & \texttt{0x17} & V R W U & Trang ngăn xếp user thứ hai, chứa đỉnh ngăn xếp (\texttt{sp}) và các đối số \texttt{argv}. \\
+        255/511/509 & \texttt{0x3FFFFFD000} & \texttt{0x13} & V R U & Trang \texttt{USYSCALL} của Chức năng 1, chứa \texttt{struct usyscall} (PID). User chỉ được đọc. \\
+        255/511/510 & \texttt{0x3FFFFFE000} & \texttt{0x07} & V R W & \texttt{TRAPFRAME}: nơi trampoline lưu thanh ghi user khi có trap. Không có bit \texttt{U}, chỉ kernel và trampoline (chạy ở supervisor mode) được truy cập. \\
+        255/511/511 & \texttt{0x3FFFFFF000} & \texttt{0x0b} & V R X & \texttt{TRAMPOLINE}: mã \texttt{uservec}/\texttt{userret} để chuyển giữa user và kernel. Trang này nằm ở địa chỉ vật lý \texttt{0x80006000} trong đoạn mã kernel, được chia sẻ với mọi tiến trình. Không có bit \texttt{U} nên chỉ thực thi được ở supervisor mode. \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
+
+\begin{calloutnote}[Khác biệt so với ví dụ trong đề bài]
+    Ví dụ trong đề chỉ có 4 trang lá ở vùng thấp (chỉ số 0--3), còn kết quả của nhóm có 5 trang (0--4). Nguyên nhân là Makefile của repo đang dùng \texttt{LAB=util}, nên \texttt{kernel/param.h} đặt \texttt{USERSTACK = 2}. \texttt{exec()} vì vậy cấp \texttt{USERSTACK + 1 = 3} trang cho vùng ngăn xếp: một trang bảo vệ và hai trang ngăn xếp. Ngoài ra, ví dụ của đề cũng có trang \texttt{509} (\texttt{USYSCALL}), trùng với kết quả của nhóm vì Chức năng 1 đã được cài đặt.
+\end{calloutnote}
+
+\begin{callouttip}[Không có bit A/D trong kết quả]
+    Các PTE in ra đều chưa bật bit \texttt{A} (Accessed, bit 6) hay \texttt{D} (Dirty, bit 7) vì \texttt{vmprint()} được gọi ngay sau \texttt{exec()}, trước khi \texttt{init} chạy lệnh user đầu tiên. Đây cũng là cách có thể dùng \texttt{vmprint()} để gỡ lỗi Chức năng 3 (\texttt{pgaccess}): in bảng trang trước và sau khi truy cập để thấy bit \texttt{A} thay đổi.
+\end{callouttip}
+
+\subsection{Kiểm thử}
+
+\subsubsection{Kiểm thử tự động}
+Vì địa chỉ vật lý thay đổi giữa các lần chạy, bài kiểm thử \texttt{pte printout} trong \texttt{grade-lab-pgtbl} không so khớp nguyên văn mà kiểm tra:
+\begin{enumerate}
+    \item Có đúng một dòng tiêu đề \texttt{page table 0x...} với 16 chữ số hexa.
+    \item Số dòng PTE và tiền tố (độ sâu + chỉ số) của từng dòng khớp với cấu trúc mong đợi ở Bảng~\ref{tab:vmprint_leaves}.
+    \item Các bit \texttt{V}, \texttt{R}, \texttt{W}, \texttt{X}, \texttt{U} của từng PTE đúng như mong đợi.
+    \item Cột \texttt{pa} đúng bằng \texttt{PTE2PA} của cột \texttt{pte}.
+\end{enumerate}
+
+\noindent Kết quả chạy \texttt{python3 grade-lab-pgtbl}:
+\begin{center}
+\begin{minipage}{0.92\textwidth}
+\begin{lstlisting}[numbers=none,xleftmargin=0pt,framexleftmargin=0pt]
+== Test running vmprint == (0.5s)
+== Test   pte printout ==
+  pte printout: OK
+== Test ugetpid_test == ugetpid_test: OK (0.9s)
+Score: 70/70
+\end{lstlisting}
+\end{minipage}
+\end{center}
+
+\subsection{Khó khăn và Cách giải quyết}
+\begin{itemize}
+    \item \textbf{Kết quả không giống hệt ví dụ của đề}: Ban đầu nhóm thắc mắc vì có thêm dòng \texttt{.. .. ..4}. Sau khi đọc \texttt{exec.c} và \texttt{param.h}, nhóm xác định đây là do cấu hình \texttt{USERSTACK = 2} của lab util, không phải lỗi của \texttt{vmprint()}.
+    \item \textbf{Phân biệt nút trong và lá}: Nếu chỉ kiểm tra bit \texttt{V} rồi đệ quy, hàm sẽ coi trang dữ liệu là trang bảng và đọc dữ liệu rác. Cần kiểm tra thêm điều kiện \texttt{(pte \& (PTE\_R|PTE\_W|PTE\_X)) == 0} giống \texttt{freewalk()}.
+    \item \textbf{Kiểm thử với địa chỉ thay đổi}: Địa chỉ vật lý do \texttt{kalloc()} cấp nên khác nhau giữa các lần chạy. Bài kiểm thử vì thế chỉ so sánh cấu trúc, bit quyền và quan hệ \texttt{pa = PTE2PA(pte)}.
+\end{itemize}
+
+\subsection{Bảng Tự Đánh giá Mức độ Hoàn thành}
+\begin{table}[h!]
+    \centering
+    \caption{Tự đánh giá mức độ hoàn thành Chức năng 2 (In bảng trang)}
+    \label{tab:self_eval_vmprint}
+    \begin{tabularx}{\textwidth}{c X c}
+        \toprule
+        \textbf{STT} & \textbf{Tiêu chí đánh giá} & \textbf{Mức độ} \\
+        \midrule
+        1 & Cài đặt \texttt{vmprint()} đúng định dạng (độ sâu, chỉ số, pte, pa) & 100\% \\
+        2 & Bỏ qua PTE không hợp lệ, phân biệt đúng nút trong và lá & 100\% \\
+        3 & Khai báo trong \texttt{defs.h} và gọi trong \texttt{exec()} cho \texttt{pid == 1} & 100\% \\
+        4 & Giải thích nội dung và bit quyền của từng trang lá & 100\% \\
+        5 & Kiểm thử tự động \texttt{pte printout} trong \texttt{grade-lab-pgtbl} & 100\% \\
+        \bottomrule
+    \end{tabularx}
+\end{table}
