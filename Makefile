@@ -201,9 +201,10 @@ UPROGS=\
 	$U/_du\
 	$U/_diff\
 	$U/_tree\
-	/_trace\
-	/_sysinfo\
-	/_sysinfotest\
+	$U/_trace\
+	$U/_sysinfo\
+	$U/_sysinfotest\
+	$U/_pstree\
 
 
 

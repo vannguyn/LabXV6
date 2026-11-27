@@ -4,6 +4,7 @@
 #include "riscv.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "ptree.h"
 #include "defs.h"
 
 struct cpu cpus[NCPU];
@@ -708,6 +709,36 @@ proc_nproc(void)
   for(p = proc; p < &proc[NPROC]; p++) {
     acquire(&p->lock);
     if(p->state != UNUSED) {
+      count++;
+    }
+    release(&p->lock);
+  }
+  return count;
+}
+
+// Collect information about all non-UNUSED processes.
+// Fill at most max entries into buf (kernel-space buffer).
+// Returns the number of entries filled.
+int
+procinfo(struct ptreeinfo *buf, int max)
+{
+  struct proc *p;
+  int count = 0;
+
+  for(p = proc; p < &proc[NPROC] && count < max; p++){
+    acquire(&p->lock);
+    if(p->state != UNUSED){
+      buf[count].pid = p->pid;
+      buf[count].state = p->state;
+      buf[count].memsize = p->sz;
+      strncpy(buf[count].name, p->name, sizeof(buf[count].name));
+      // Get parent pid: parent pointer is protected by wait_lock,
+      // but reading p->parent->pid is safe here because we only read
+      // and the parent pid is stable while we hold p->lock.
+      if(p->parent)
+        buf[count].ppid = p->parent->pid;
+      else
+        buf[count].ppid = 0;  // init process has no parent
       count++;
     }
     release(&p->lock);

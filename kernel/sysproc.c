@@ -6,6 +6,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "sysinfo.h"
+#include "ptree.h"
 
 uint64
 sys_exit(void)
@@ -118,4 +119,30 @@ sys_sysinfo(void)
   if(copyout(p->pagetable, uaddr, (char *)&info, sizeof(info)) < 0)
     return -1;
   return 0;
+}
+
+uint64
+sys_ptree(void)
+{
+  uint64 addr;  // user pointer to ptreeinfo array
+  int max;
+
+  argaddr(0, &addr);
+  argint(1, &max);
+
+  // Validate arguments
+  if(addr == 0 || max <= 0)
+    return -1;
+
+  // Use a kernel buffer to collect process info
+  struct ptreeinfo buf[NPROC];
+  int count = procinfo(buf, max);
+
+  // Copy from kernel buffer to user space
+  struct proc *p = myproc();
+  if(copyout(p->pagetable, addr, (char *)buf,
+             count * sizeof(struct ptreeinfo)) < 0)
+    return -1;
+
+  return count;
 }

@@ -4,6 +4,7 @@ struct file;
 struct inode;
 struct pipe;
 struct proc;
+struct ptreeinfo;
 struct spinlock;
 struct sleeplock;
 struct stat;
@@ -108,6 +109,7 @@ int             either_copyout(int user_dst, uint64 dst, void *src, uint64 len);
 int             either_copyin(void *dst, int user_src, uint64 src, uint64 len);
 void            procdump(void);
 uint64          proc_nproc(void);
+int             procinfo(struct ptreeinfo*, int);
 
 // swtch.S
 void            swtch(struct context*, struct context*);
